@@ -1,0 +1,30 @@
+.env
+data/*.json
+data/*.tmp
+data/*.key
+data/*.corrompido-*
+coverage/
+*.log
+.DS_Store
+node_modules/
+Germinal-RPG-Facil.zip
+
+data/*.bak
+data/*.pre-v5
+artifacts/
+
+# Android / Gradle
+.gradle/
+**/build/
+*.jks
+*.keystore
+local.properties
+
+# Eidryss runtime
+/data/eidryss.json
+/data/system-status.json
+
+.signing/
+
+Eidryss-RPG-*.zip
+Eidryss-Android-Client-*.zip

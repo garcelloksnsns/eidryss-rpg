@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.garcello.eidryss'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.garcello.eidryss'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            def keyFile = System.getenv('EIDRYSS_KEYSTORE_FILE')
+            if (keyFile && file(keyFile).exists()) {
+                storeFile file(keyFile)
+                storePassword System.getenv('EIDRYSS_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('EIDRYSS_KEY_ALIAS')
+                keyPassword System.getenv('EIDRYSS_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (System.getenv('EIDRYSS_KEYSTORE_FILE')) signingConfig signingConfigs.release
+        }
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Sigilo de Eidryss">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%"><stop offset="0" stop-color="#24254b"/><stop offset="1" stop-color="#070912"/></radialGradient>
+    <linearGradient id="rune" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f6d58b"/><stop offset=".55" stop-color="#9b8cff"/><stop offset="1" stop-color="#70d5ff"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <circle cx="128" cy="128" r="84" fill="none" stroke="#ffffff18" stroke-width="2"/>
+  <circle cx="128" cy="128" r="65" fill="none" stroke="url(#rune)" stroke-width="5" stroke-dasharray="16 10" filter="url(#glow)"/>
+  <path d="M128 50 184 128 128 206 72 128Z" fill="none" stroke="url(#rune)" stroke-width="7" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M128 78 159 128 128 178 97 128Z" fill="#9b8cff16" stroke="#e9d399" stroke-width="4"/>
+  <circle cx="128" cy="128" r="13" fill="#f7e3ae" filter="url(#glow)"/>
+  <circle cx="128" cy="44" r="5" fill="#75dbff"/>
+  <circle cx="199" cy="128" r="5" fill="#9b8cff"/>
+  <circle cx="128" cy="212" r="5" fill="#f6d58b"/>
+  <circle cx="57" cy="128" r="5" fill="#9b8cff"/>
+</svg>

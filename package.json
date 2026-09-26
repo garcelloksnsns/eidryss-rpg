@@ -1,0 +1,16 @@
+{
+  "name": "eidryss-rpg",
+  "version": "7.0.0",
+  "private": true,
+  "description": "RPG sandbox multiplayer mobile-first: progressão híbrida, maestrias, mundo vivo, mestragem distribuída e cliente Android atualizável.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node run.js",
+    "dev": "node --watch run.js",
+    "test": "node --test --test-concurrency=1",
+    "simulate": "node simulate-game.js"
+  }
+}

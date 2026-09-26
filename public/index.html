@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#090b17">
+  <meta name="description" content="Eidryss — RPG sandbox multiplayer persistente, mobile-first e conduzido por Mestre IA.">
+  <title>Eidryss</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css?v=700">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main id="app" class="app-shell" aria-live="polite">
+    <section class="splash splash-v7" aria-label="Carregando Eidryss">
+      <div class="eidryss-sigil" aria-hidden="true">
+        <svg viewBox="0 0 180 180">
+          <circle class="sigil-ring ring-a" cx="90" cy="90" r="72"/>
+          <circle class="sigil-ring ring-b" cx="90" cy="90" r="56"/>
+          <path class="sigil-diamond" d="M90 20 145 90 90 160 35 90Z"/>
+          <path class="sigil-core" d="M90 49 119 90 90 131 61 90Z"/>
+          <circle class="sigil-star" cx="90" cy="90" r="9"/>
+          <circle class="sigil-node n1" cx="90" cy="18" r="4"/><circle class="sigil-node n2" cx="162" cy="90" r="4"/>
+          <circle class="sigil-node n3" cx="90" cy="162" r="4"/><circle class="sigil-node n4" cx="18" cy="90" r="4"/>
+        </svg>
+      </div>
+      <div class="splash-copy"><span class="eyebrow">A travessia começa</span><h1>Eidryss</h1><p>Sincronizando o mundo…</p></div>
+      <div class="splash-progress"><i></i></div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script type="module" src="/app.js?v=700"></script>
+</body>
+</html>
