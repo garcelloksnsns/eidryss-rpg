@@ -37,10 +37,16 @@ jobs:
           java-version: '17'
 
       - name: Android SDK 35
-        uses: android-actions/setup-android@v3
-
-      - name: Install platform and build tools
-        run: yes | sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
