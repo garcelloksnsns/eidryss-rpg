@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const emptyDatabase = () => ({
-  schemaVersion: 10,
+  schemaVersion: 11,
   users: [],
   sessions: [],
   campaigns: [],
@@ -32,7 +32,17 @@ function migrateWorld(world = {}) {
 
 function migrate(database) {
   const state = { ...emptyDatabase(), ...database };
-  state.users = state.users.map((user) => ({ aiCredentials: {}, presentation: { avatar: '✦', accent: '#8b7cff' }, ...user, presentation: { avatar: '✦', accent: '#8b7cff', ...(user.presentation || {}) } }));
+  state.users = state.users.map((user) => ({
+    aiCredentials: {},
+    presentation: { avatar: '✦', accent: '#8b7cff' },
+    preferences: { performanceMode:'auto', motionMode:'full', density:'comfortable', textScale:'normal', mapDetail:'rich', ambientEffects:true },
+    ...user,
+    presentation: { avatar: '✦', accent: '#8b7cff', ...(user.presentation || {}) },
+    preferences: {
+      performanceMode:'auto', motionMode:'full', density:'comfortable', textScale:'normal', mapDetail:'rich', ambientEffects:true,
+      ...(user.preferences || {}),
+    },
+  }));
   state.campaigns = state.campaigns.map((campaign) => ({
     isDemo: false,
     masterUserId: campaign.masterUserId || campaign.ownerId,
@@ -62,7 +72,7 @@ function migrate(database) {
     if(c.specialization&&!c.pathId){const cls=CLASSES.find(item=>item.id===c.classId);const path=cls?.paths?.find(item=>item.name===c.specialization);if(path)c.pathId=path.id;}
   });
   state.campaigns.forEach(c => { ensureAtlas(c.world); ensureWorldDirector(c.world); ensureBestiary(c.world); });
-  state.schemaVersion = 10;
+  state.schemaVersion = 11;
   return state;
 }
 
@@ -77,7 +87,7 @@ export class JsonStore {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     try {
       const parsed = JSON.parse(await fs.readFile(this.filePath, 'utf8'));
-      if((parsed.schemaVersion||0)<10)await fs.copyFile(this.filePath,`${this.filePath}.pre-v9`).catch(error=>{throw error;});
+      if((parsed.schemaVersion||0)<11)await fs.copyFile(this.filePath,`${this.filePath}.pre-v11`).catch(error=>{throw error;});
       this.state = migrate(parsed);
     } catch (error) {
       if (error.code !== 'ENOENT') throw new Error('Banco não pôde ser aberto. Arquivo original preservado; restaure um backup antes de iniciar.', { cause: error });

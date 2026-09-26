@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { CLASSES, ITEMS, ATTRIBUTES, chooseClass, ensureProgression, allocate, train, makeItem, makeGeneratedItem, grantXp } from '../game/catalog.js';
-import { ensureAtlas, ensureWorldDirector, initializeIsekai, publicAtlas, publicBestiary } from '../game/world.js';
+import { ensureAtlas, ensureWorldDirector, ensureQuestJournal, initializeIsekai, publicAtlas, publicBestiary, publicEventForecast } from '../game/world.js';
 import { assert, AppError } from '../core/errors.js';
 import { hashPassword, newToken, tokenDigest, verifyPassword } from '../core/security.js';
 import { clamp, cleanText, joinCode, newId, normalizeUsername, nowIso, publicUser } from '../core/utils.js';
@@ -13,6 +13,26 @@ import { advanceCampaignMemory, createCampaignMemory, ensureCampaignMemory } fro
 const PROVIDERS = new Set(['gemini', 'openai', 'grok', 'groq', 'openrouter', 'custom']);
 const VISUAL_THEMES = new Set(['forest', 'ocean', 'ember', 'cosmic']);
 const CHARACTER_AURAS = new Set(['folha', 'oceano', 'brasa', 'cosmico']);
+
+const PERFORMANCE_MODES = new Set(['auto','cinematic','balanced','light','ultra']);
+const MOTION_MODES = new Set(['full','reduced']);
+const DENSITY_MODES = new Set(['comfortable','compact']);
+const TEXT_SCALES = new Set(['small','normal','large','xl']);
+const MAP_DETAIL_MODES = new Set(['rich','standard','minimal']);
+
+function interfacePreferences(value = {}) {
+  const performanceMode = cleanText(value.performanceMode || 'auto', 20).toLowerCase();
+  const motionMode = cleanText(value.motionMode || 'full', 20).toLowerCase();
+  const density = cleanText(value.density || 'comfortable', 20).toLowerCase();
+  const textScale = cleanText(value.textScale || 'normal', 20).toLowerCase();
+  const mapDetail = cleanText(value.mapDetail || 'rich', 20).toLowerCase();
+  assert(PERFORMANCE_MODES.has(performanceMode), 'INVALID_PREFERENCE', 'Escolha um modo de desempenho válido.');
+  assert(MOTION_MODES.has(motionMode), 'INVALID_PREFERENCE', 'Escolha uma opção de animação válida.');
+  assert(DENSITY_MODES.has(density), 'INVALID_PREFERENCE', 'Escolha uma densidade de interface válida.');
+  assert(TEXT_SCALES.has(textScale), 'INVALID_PREFERENCE', 'Escolha um tamanho de texto válido.');
+  assert(MAP_DETAIL_MODES.has(mapDetail), 'INVALID_PREFERENCE', 'Escolha um nível de detalhe do mapa válido.');
+  return { performanceMode, motionMode, density, textScale, mapDetail, ambientEffects: value.ambientEffects !== false };
+}
 
 function userPresentation(value = {}) {
   const avatar = cleanText(value.avatar || '✦', 16) || '✦';
@@ -101,11 +121,11 @@ function safeCampaign(campaign) {
   };
 }
 
-function publicWorld(world) {
+function publicWorld(world, settings = {}) {
   const director=ensureWorldDirector(world);
   return {location:world.location,time:world.time,weather:world.weather,ecosystem:structuredClone(world.ecosystem),
     introduction:world.introduction?{phase:world.introduction.phase,completed:world.introduction.completed}:null,
-    atlas:publicAtlas(world), quests:structuredClone(world.quests||[]),
+    atlas:publicAtlas(world), quests:structuredClone(ensureQuestJournal(world)), eventForecast:publicEventForecast(world,settings),
     storyThreads:structuredClone(director.threads.filter(thread=>thread.status==='ACTIVE').slice(-6)),
     clocks:structuredClone((director.clocks||[]).filter(clock=>clock.visibility!=='PRIVATE').slice(-8)),
     recentEvents:structuredClone((world.events||[]).slice(-5)),
@@ -220,7 +240,7 @@ export class GameService {
     const token = newToken();
     const created = await this.store.mutate((state) => {
       assert(!state.users.some((user) => user.username === username), 'USERNAME_TAKEN', 'Este nome de usuário já está em uso.', 409);
-      const user = { id: newId(), username, displayName, passwordHash, presentation: userPresentation(input.presentation), createdAt: nowIso() };
+      const user = { id: newId(), username, displayName, passwordHash, presentation: userPresentation(input.presentation), preferences: interfacePreferences(input.preferences || {}), createdAt: nowIso() };
       state.users.push(user);
       state.sessions.push({ id: newId(), userId: user.id, digest: tokenDigest(token), expiresAt: new Date(Date.now() + this.config.sessionTtlMs).toISOString(), createdAt: nowIso() });
       return publicUser(user);
@@ -262,6 +282,7 @@ export class GameService {
       assert(user, 'NOT_AUTHORIZED', 'Sessão inválida.', 401);
       return {
         user: publicUser(user),
+        preferences: interfacePreferences(user.preferences || {}),
         aiCredentials: {
           gemini: { configured: Boolean(user.aiCredentials?.gemini?.encryptedKey || this.config.geminiApiKey), model: user.aiCredentials?.gemini?.model || this.config.geminiModel, source: user.aiCredentials?.gemini?.encryptedKey ? 'profile' : this.config.geminiApiKey ? 'environment' : null },
           openai: { configured: Boolean(user.aiCredentials?.openai?.encryptedKey || this.config.openAiApiKey), model: user.aiCredentials?.openai?.model || this.config.openAiModel, source: user.aiCredentials?.openai?.encryptedKey ? 'profile' : this.config.openAiApiKey ? 'environment' : null },
@@ -328,6 +349,18 @@ export class GameService {
       return publicUser(user);
     });
     return { user: updated };
+  }
+
+
+  async updatePreferences(userId, input) {
+    const preferences = interfacePreferences(input || {});
+    await this.store.mutate((state) => {
+      const user = state.users.find((item) => item.id === userId);
+      assert(user, 'NOT_AUTHORIZED', 'Sessão inválida.', 401);
+      user.preferences = preferences;
+      user.updatedAt = nowIso();
+    });
+    return { preferences };
   }
 
   async saveAiCredential(userId, input) {
@@ -921,7 +954,7 @@ export class GameService {
       return {
         catalog: {classes:CLASSES,items:ITEMS,attributes:ATTRIBUTES,talents:TALENTS,masteryRanks:MASTERY_RANKS,recipes:RECIPES.map(recipe=>({...recipe,status:recipeStatus(character,recipe)})),market:marketPresentation(character,campaign.world)}, devTools:Boolean(this.config.devTools&&campaign.ownerId===userId&&campaign.isDemo),
         audit:state.events.filter(e=>e.campaignId===campaignId&&(e.type.startsWith('HOST_')||e.type.startsWith('MASTER_')||e.type==='PLAYER_AVAILABILITY')).slice(-40),
-        campaign: { ...safeCampaign(campaign), world: publicWorld(campaign.world), summary: campaign.summary },
+        campaign: { ...safeCampaign(campaign), world: publicWorld(campaign.world, campaign.settings), summary: campaign.summary },
         character: (()=>{ ensureProgression(character); const attrs=effectiveAttributes(character); return {...character,legacyPowers:undefined,effectiveAttributes:attrs,derivedStats:derivedStats(character,attrs),masterySummary:Object.fromEntries(Object.keys(ATTRIBUTES).map(key=>{const xp=character.masteries?.[key]?.xp||0;const rank=masteryRankFor(xp);const next=nextMasteryRank(xp);return [key,{xp,uses:character.masteries?.[key]?.uses||0,rank,next}];}))}; })(),
         party,
         turn: turn ? { id: turn.id, number: turn.number, status: turn.status, ready: currentActions.length, total: turn.expectedPlayerIds.length, active: turn.expectedPlayerIds.filter(id=>state.users.find(u=>u.id===id)?.isBot || this.hub?.isOnline?.(campaignId,id) || currentActions.some(a=>a.userId===id)).length, minimum: Math.min(turn.expectedPlayerIds.length,Math.max(1,Number(campaign.settings.minPlayers||1))), aiError: (campaign.ownerId === userId || (campaign.masterUserId||campaign.ownerId)===userId) ? turn.aiError || null : null, myAction: myAction ? { id: myAction.id, text: myAction.text, status: myAction.status } : null } : null,

@@ -1,8 +1,8 @@
-# Eidryss 7.0.1 — Ascensão
+# Eidryss 7.2 — Horizonte Vivo
 
 Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em Node.js, Mestre IA, mundo persistente e cliente Android. O celular do Host continua sendo o servidor pelo Termux; o APK funciona como cliente e recebe a interface atualizada do próprio servidor.
 
-## O que mudou na 7.0
+## Destaques da 7.2
 
 - nova identidade **Eidryss**, novo sigilo e splash animado;
 - interface remasterizada com navegação mobile, microanimações e modo leve;
@@ -15,6 +15,12 @@ Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em 
 - modo de manutenção e revisão de cliente para atualizar a interface sem reinstalar APK;
 - cliente Android nativo para splash/conexão/manutenção/cache + WebView segura para a interface viva;
 - GitHub Actions pronto para compilar um APK sem computador.
+- Atlas Vivo 2.0 com terreno vetorial, rotas, risco e fronteiras ocultas;
+- Diário Vivo com objetivos, progresso, recompensas e missão acompanhada;
+- eventos contextuais em viagem e combate, incluindo reforços inesperados;
+- radar de possibilidades do mundo sem transformar eventos em garantias;
+- preferências visuais por jogador com cinco modos de desempenho;
+- client revision 720 e migração de banco schema 11.
 
 
 ## Persistência entre versões

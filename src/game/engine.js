@@ -7,8 +7,8 @@ import { clamp, cleanText, newId, nowIso } from '../core/utils.js';
 const EVENT_TYPES = new Set([
   'DAMAGE', 'HEAL', 'ITEM_GAINED', 'ITEM_LOST', 'STATUS_APPLIED', 'STATUS_REMOVED',
   'CHARACTER_MOVED', 'POWER_USED', 'CHARACTER_DIED', 'CHARACTER_INCAPACITATED',
-  'DISCOVERY', 'QUEST_STARTED', 'QUEST_COMPLETED', 'WORLD_CHANGED', 'ACTION_RESOLVED',
-  'RESOURCE_GATHERED', 'RESOURCE_RESPAWNED', 'RESTED', 'NPC_RELATION_CHANGED',
+  'DISCOVERY', 'QUEST_STARTED', 'QUEST_UPDATED', 'QUEST_COMPLETED', 'WORLD_CHANGED', 'ACTION_RESOLVED',
+  'RESOURCE_GATHERED', 'RESOURCE_RESPAWNED', 'RESTED', 'NPC_RELATION_CHANGED', 'COINS_GAINED',
   'WORLD_EVENT', 'NPC_ARRIVED', 'ENCOUNTER_STARTED', 'ENEMY_ACTED', 'STORY_THREAD_STARTED',
   'ACTION_CHECKED', 'COMPLICATION', 'WORLD_CLOCK_ADVANCED', 'WORLD_CLOCK_COMPLETED',
   'ATTRIBUTE_MASTERY_GAINED', 'ATTRIBUTE_MASTERY_RANK_UP', 'SKILL_MASTERY_GAINED', 'SKILL_MASTERY_RANK_UP',
@@ -529,9 +529,13 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
   resolveEnemyInitiative(world, actors, events, turnNumber, random, campaign.settings || {});
   progressWorld(world,actors,actions,events,turnNumber,{random,settings:campaign.settings||{}});
   for(const c of actors){
-    const outcome=outcomes.find(o=>o.characterId===c.id);const questXp=events.filter(e=>e.type==='QUEST_COMPLETED').reduce((n,e)=>n+(e.data.rewardXp||0),0);
+    const outcome=outcomes.find(o=>o.characterId===c.id);
+    const completedQuests=events.filter(e=>e.type==='QUEST_COMPLETED');
+    const questXp=completedQuests.reduce((n,e)=>n+Number(e.data?.rewardXp||0),0);
+    const questCoins=completedQuests.reduce((n,e)=>n+Number(e.data?.rewardCoins||0),0);
     const earned=(outcome?.success? (campaign.settings.progressionSpeed==='fast'?20:10):0)+questXp;
     if(questXp&&!c.powers.some(p=>p.id==='echo-sense')){c.powers.push(structuredClone(STORY_SKILLS[0]));events.push(event(turnNumber,'SKILL_UNLOCKED',c.id,c.id,{skillId:'echo-sense',name:'Sentido dos Ecos'}));}
+    if(questCoins>0){c.coins=Math.max(0,Number(c.coins??75))+questCoins;events.push(event(turnNumber,'COINS_GAINED',c.id,c.id,{amount:questCoins,source:'quest'}));}
     if(earned){const levels=grantXp(c,earned);events.push(event(turnNumber,'XP_GAINED',c.id,c.id,{amount:earned,levels}));}
     c.downtimePoints=Math.min(3,Number(c.downtimePoints||0)+1);
   }

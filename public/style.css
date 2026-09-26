@@ -533,3 +533,115 @@ body[data-performance="low"] .sigil-ring,body[data-performance="low"] .sigil-cor
 .bottom-nav{position:fixed!important;left:50%!important;right:auto!important;bottom:max(8px,env(safe-area-inset-bottom))!important;transform:translateX(-50%)!important;z-index:80;contain:layout paint;will-change:transform}
 .guide-bot{position:fixed!important;z-index:82}
 @media(max-height:650px){.page-content{padding-bottom:calc(96px + env(safe-area-inset-bottom))}}
+
+/* =============================================================
+   Eidryss 7.2 — Horizonte Vivo
+   Interface remaster + atlas vivo + diário estruturado + perfis
+   ============================================================= */
+
+:root{
+  --eidryss-text-scale:1;
+  --glass-blur:26px;
+  --surface-glow:0 20px 60px rgba(0,0,0,.42);
+  --ambient-opacity:.13;
+}
+body[data-text-scale="small"]{--eidryss-text-scale:.92}
+body[data-text-scale="normal"]{--eidryss-text-scale:1}
+body[data-text-scale="large"]{--eidryss-text-scale:1.1}
+body[data-text-scale="xl"]{--eidryss-text-scale:1.2}
+body{font-size:calc(16px * var(--eidryss-text-scale))}
+.tiny{font-size:calc(.72rem * var(--eidryss-text-scale))}
+.narrative-prose{font-size:calc(1rem * var(--eidryss-text-scale))}
+
+/* Qualidade escalonável: os modos leves preservam composição e legibilidade,
+   removendo apenas efeitos caros. */
+body[data-quality="cinematic"]{--glass-blur:28px;--surface-glow:0 22px 70px rgba(0,0,0,.5);--ambient-opacity:.18}
+body[data-quality="balanced"]{--glass-blur:20px;--surface-glow:0 17px 48px rgba(0,0,0,.38);--ambient-opacity:.12}
+body[data-quality="light"]{--glass-blur:0px;--surface-glow:0 8px 22px rgba(0,0,0,.3);--ambient-opacity:.055}
+body[data-quality="ultra"]{--glass-blur:0px;--surface-glow:none;--ambient-opacity:0}
+body[data-quality="light"] .card,
+body[data-quality="light"] .bottom-nav,
+body[data-quality="light"] .personal-settings-sheet,
+body[data-quality="ultra"] .card,
+body[data-quality="ultra"] .bottom-nav,
+body[data-quality="ultra"] .personal-settings-sheet{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+body[data-quality="light"] .ambient{opacity:.045!important;filter:blur(55px)!important}
+body[data-quality="ultra"] .ambient,
+body[data-quality="ultra"] .scene-aurora,
+body[data-quality="ultra"] .portal-orbit,
+body[data-quality="ultra"] .atlas-vignette{display:none!important}
+body[data-quality="ultra"] *,body[data-quality="ultra"] *::before,body[data-quality="ultra"] *::after{box-shadow:none!important;text-shadow:none!important;animation:none!important;transition-duration:.01ms!important}
+body[data-ambient-effects="off"] .ambient,
+body[data-ambient-effects="off"] .scene-aurora,
+body[data-ambient-effects="off"] .portal-orbit,
+body[data-ambient-effects="off"] .world-orb-live::after{display:none!important}
+
+/* Longas coleções ficam baratas no WebView. */
+.quest-card-v2,.map-place-v2,.market-card,.recipe-card,.class-card,.npc-journal-card,.timeline details{content-visibility:auto;contain-intrinsic-size:auto 230px}
+
+/* Cabeçalho e configurações pessoais */
+.header-badges{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.game-settings-button{width:38px;height:38px;min-width:38px;border-radius:13px;font-size:1rem}
+.personal-settings-layer{position:relative;z-index:100}
+.personal-settings-backdrop{position:fixed;z-index:100;inset:0;background:rgba(2,3,9,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:settings-fade .2s ease both}
+.personal-settings-sheet{position:fixed;z-index:101;left:50%;bottom:0;transform:translateX(-50%);width:min(100%,760px);max-height:min(88vh,850px);overflow:auto;padding:10px 18px calc(24px + env(safe-area-inset-bottom));border:1px solid rgba(188,180,255,.16);border-bottom:0;border-radius:28px 28px 0 0;background:linear-gradient(180deg,rgba(24,25,45,.985),rgba(8,10,18,.995));box-shadow:0 -30px 80px rgba(0,0,0,.62);backdrop-filter:blur(var(--glass-blur)) saturate(130%);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(130%);animation:settings-rise .32s cubic-bezier(.2,.9,.2,1) both}
+.sheet-handle{width:44px;height:4px;margin:2px auto 14px;border-radius:99px;background:rgba(255,255,255,.18)}
+.personal-settings-sheet h1{font-size:1.7rem;margin:5px 0 16px}
+.personal-preferences-form{display:grid;gap:16px}
+.preset-field{margin:0;padding:0;border:0}.preset-field legend{margin-bottom:10px;color:var(--muted);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.12em}
+.performance-presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.performance-preset{position:relative;display:grid;grid-template-rows:auto auto 1fr;gap:4px;min-height:118px;padding:12px 10px;border:1px solid rgba(166,160,219,.13);border-radius:16px;background:rgba(255,255,255,.025);cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.performance-preset input{position:absolute;opacity:0;pointer-events:none}.performance-preset>span{font-size:1.15rem;color:#b9adff}.performance-preset>b{font-size:.75rem}.performance-preset>small{color:var(--muted);font-size:.62rem;line-height:1.4}
+.performance-preset.selected{border-color:rgba(232,199,124,.5);background:linear-gradient(155deg,rgba(232,199,124,.11),rgba(154,140,255,.09));transform:translateY(-2px)}
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.settings-toggle{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.025)}.settings-actions{gap:12px}.settings-actions small{max-width:390px;line-height:1.45}
+.preference-summary{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.preference-summary span{padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025);color:var(--muted);font-size:.7rem}.personal-interface-summary{overflow:hidden}
+
+/* Aventura */
+.story-v2{padding-bottom:10px}.scene-banner-v2{min-height:250px;padding:28px 24px;display:grid;align-items:end;background:radial-gradient(circle at 82% 20%,rgba(155,140,255,.2),transparent 30%),radial-gradient(circle at 10% 100%,rgba(80,198,208,.12),transparent 38%),linear-gradient(145deg,#181a30,#0b0e19 65%);box-shadow:inset 0 1px rgba(255,255,255,.04),var(--surface-glow)}
+.scene-copy{position:relative;z-index:2;max-width:78%}.scene-copy h1{font-size:clamp(2rem,8vw,3.4rem);margin:7px 0 10px}.scene-copy>p{line-height:1.65;color:#c0c3d3}.scene-meta{display:flex;flex-wrap:wrap;gap:6px;margin:13px 0}.scene-meta span{padding:6px 9px;border:1px solid rgba(185,177,255,.14);border-radius:999px;background:rgba(5,7,15,.36);color:#aeb3c6;font-size:.68rem}.scene-meta span.danger{color:#ffb7bd;border-color:rgba(255,113,130,.26);background:rgba(150,30,45,.12)}
+.scene-aurora{position:absolute;inset:-30%;pointer-events:none;background:conic-gradient(from 100deg at 68% 45%,transparent 0 20%,rgba(129,110,255,.14) 28%,transparent 40% 68%,rgba(82,207,196,.09) 74%,transparent 84%);filter:blur(18px);animation:scene-aurora 15s linear infinite}
+.scene-status-orb{position:absolute;right:24px;top:25px;z-index:2;display:grid;place-items:center;width:90px;height:90px;border:1px solid rgba(232,199,124,.26);border-radius:50%;background:radial-gradient(circle,rgba(148,136,255,.16),rgba(7,8,18,.54) 66%);box-shadow:0 0 38px rgba(148,136,255,.12)}.scene-status-orb::before{content:'';position:absolute;inset:8px;border:1px dashed rgba(154,140,255,.34);border-radius:50%;animation:sigil-spin 12s linear infinite}.scene-status-orb strong{font-size:1.15rem;color:#ead18d}.scene-status-orb small{max-width:62px;text-align:center;line-height:1.1;color:#aaa8bc;font-size:.58rem}.scene-intro-note{position:absolute;left:24px;right:24px;bottom:10px;color:#aaa8bc;font-size:.67rem}
+.tracked-quest-mini{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;width:100%;padding:12px 14px;border:1px solid rgba(232,199,124,.2);border-radius:16px;background:linear-gradient(90deg,rgba(232,199,124,.09),rgba(154,140,255,.05));color:var(--ink);text-align:left}.tracked-quest-mini span{color:#dac47d;font-size:.67rem;font-weight:800}.tracked-quest-mini strong{font-size:.78rem}.tracked-quest-mini i{color:#b9adff;font-style:normal;font-weight:800}
+.narrative-v2{position:relative;overflow:hidden;padding:22px;border-color:rgba(191,184,255,.14);background:linear-gradient(155deg,rgba(20,21,38,.96),rgba(10,12,22,.94))}.narrative-v2::after{content:'✦';position:absolute;right:-15px;bottom:-28px;font-size:110px;color:rgba(155,140,255,.035);transform:rotate(18deg);pointer-events:none}.narrative-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px}.narrative-head h2{margin:4px 0 0}.narrative-prose{max-width:68ch;line-height:1.88;white-space:normal}.narrative-prose p{margin:0 0 1.05em}.narrative-prose p:last-child{margin-bottom:0}
+
+/* Radar de eventos */
+.event-radar{display:flex;align-items:center;gap:12px}.event-radar.compact{padding:10px 13px;border:1px solid rgba(155,140,255,.14);border-radius:16px;background:rgba(13,15,28,.72)}.event-radar.compact>div:last-child{display:grid;gap:2px}.event-radar.compact b{font-size:.8rem;text-transform:capitalize}.event-radar.compact small{color:var(--muted);font-size:.63rem}
+.event-ring{--event-chance:0;position:relative;display:grid;place-items:center;flex:0 0 auto;width:54px;height:54px;border-radius:50%;background:conic-gradient(#9b8cff calc(var(--event-chance)*1%),rgba(255,255,255,.07) 0);box-shadow:0 0 20px rgba(155,140,255,.1)}.event-ring::after{content:'';position:absolute;inset:5px;border-radius:50%;background:#0e1020}.event-ring strong,.event-ring small{position:relative;z-index:1}.event-ring strong{font-size:.74rem}.event-ring.large{width:92px;height:92px}.event-ring.large::after{inset:8px;background:#101222}.event-ring.large strong{font-size:1.15rem}.event-ring.large small{font-size:.55rem;color:var(--muted);margin-top:28px;position:absolute}
+.event-radar-card{overflow:hidden;background:radial-gradient(circle at 0 0,rgba(155,140,255,.12),transparent 36%),linear-gradient(145deg,rgba(22,24,43,.97),rgba(10,12,22,.97))}.event-radar-head{display:flex;gap:16px;align-items:center}.event-radar-head h2{margin:4px 0 7px}.event-radar-head p{margin:0 0 10px;color:var(--muted);font-size:.8rem;line-height:1.55}.event-possibility-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:15px}.event-possibility{display:flex;gap:10px;padding:11px;border:1px solid rgba(180,174,226,.1);border-radius:14px;background:rgba(255,255,255,.022)}.event-possibility>span{font-size:1.25rem;color:#d6c3ff}.event-possibility div{display:grid;gap:4px}.event-possibility strong{font-size:.77rem}.event-possibility small{color:var(--muted);font-size:.65rem;line-height:1.4}.event-rule-note{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(232,199,124,.06);color:#c8c0ac;font-size:.68rem;line-height:1.45}
+.world-orb-live{position:relative}.world-orb-live::after{content:'';position:absolute;inset:-7px;border:1px solid rgba(155,140,255,.3);border-radius:50%;animation:orbital-pulse 3.2s ease-in-out infinite}
+
+/* Atlas 2.0 */
+.atlas-v2-canvas{padding:12px;overflow:hidden;background:radial-gradient(circle at 25% 70%,rgba(79,150,125,.1),transparent 30%),radial-gradient(circle at 75% 20%,rgba(139,121,199,.12),transparent 30%),#0c0f1b}.atlas-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 4px 10px}.atlas-toolbar>div{display:grid;gap:3px}.atlas-frame{position:relative;overflow:hidden;border:1px solid rgba(195,183,232,.1);border-radius:18px;background:linear-gradient(#0b1120,#0c1520);aspect-ratio:1.15/1}.atlas-frame svg{display:block;width:100%;height:100%;min-height:300px}.atlas-vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 70px rgba(0,0,0,.55);border-radius:18px}
+.terrain-shape{stroke:none}.terrain-highlands{fill:rgba(115,102,151,.13)}.terrain-forest{fill:rgba(66,133,106,.12)}.terrain-marsh{fill:rgba(62,133,145,.1)}.terrain-river{fill:none;stroke:rgba(82,177,211,.22);stroke-width:1.2;stroke-linecap:round}.terrain-ridge{fill:none;stroke:rgba(198,176,129,.14);stroke-width:.8;stroke-dasharray:1.5 1.2}.terrain-trail{fill:none;stroke:rgba(225,201,139,.09);stroke-width:2.8;stroke-linecap:round}
+.atlas-route{fill:none;stroke:rgba(209,191,139,.34);stroke-width:.8;stroke-linecap:round;stroke-dasharray:2 1;filter:drop-shadow(0 0 1px rgba(229,204,141,.2))}.atlas-node .node-halo{fill:rgba(155,140,255,.05);stroke:rgba(155,140,255,.14);stroke-width:.35}.atlas-node.reachable .node-halo{fill:rgba(126,208,184,.08);stroke:rgba(126,208,184,.24)}.atlas-node.current .node-halo{fill:url(#atlasGlow);stroke:#e9d18e;stroke-width:.5;animation:map-pulse 2.8s ease-in-out infinite}.node-core{fill:#7e7d98;stroke:#e7defb;stroke-width:.4}.node-core.danger-1{fill:#78b89f}.node-core.danger-2{fill:#88a79e}.node-core.danger-3{fill:#b79a68}.node-core.danger-4{fill:#ba775f}.node-core.danger-5{fill:#b85869}.node-icon{font-size:3.2px;fill:#f3efff;dominant-baseline:middle}.node-label{font-size:2.8px;fill:#c9c4d7;paint-order:stroke;stroke:#090b14;stroke-width:1.4px;stroke-linejoin:round}.atlas-node.current .node-label{fill:#f0d799;font-weight:900}.atlas-decor circle,.atlas-decor path{fill:none;stroke:rgba(228,208,154,.2);stroke-width:.5}.atlas-decor text{font-size:3px;fill:rgba(228,208,154,.45)}
+.atlas-legend{display:flex;flex-wrap:wrap;gap:12px;padding:10px 4px 2px;color:var(--muted);font-size:.64rem}.atlas-legend span{display:flex;align-items:center;gap:5px}.atlas-legend i{display:inline-block;width:8px;height:8px;border-radius:50%}.legend-current{background:#e8ce86;box-shadow:0 0 8px rgba(232,206,134,.5)}.legend-route{border:1px dashed #a99c78}.legend-danger{background:#b85869}
+.route-list{display:grid;gap:8px}.route-card{display:flex;align-items:center;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.025)}.route-card-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:rgba(155,140,255,.08);color:#e8d18c;font-size:1.25rem}.route-card small{display:block;margin-top:3px;color:var(--muted);font-size:.65rem}.risk-dots{color:#d8bc7c;font-size:.56rem;letter-spacing:1px}.map-place-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.map-place-v2{display:flex;flex-direction:column;gap:8px}.map-place-v2.current{border-color:rgba(232,199,124,.28);background:linear-gradient(145deg,rgba(232,199,124,.07),rgba(20,22,39,.92))}.map-place-v2 h3{margin:2px 0}.map-place-v2 p{margin:0;color:var(--muted);font-size:.76rem;line-height:1.52}.map-place-icon{font-size:1.45rem;color:#e4d098}.map-place-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto}.map-place-meta span{padding:4px 6px;border-radius:8px;background:rgba(255,255,255,.035);color:#9199ac;font-size:.59rem}.atlas-compass{font-family:serif}
+body[data-map-detail="minimal"] .terrain-shape,body[data-map-detail="minimal"] .atlas-decor,body[data-map-detail="minimal"] .node-label{display:none!important}body[data-map-detail="minimal"] .atlas-frame{aspect-ratio:1.45/1}
+body[data-map-detail="standard"] .terrain-river,body[data-map-detail="standard"] .terrain-ridge,body[data-map-detail="standard"] .terrain-trail,body[data-map-detail="standard"] .atlas-decor{display:none!important}
+
+/* Diário 2.0 */
+.quest-filter-row{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}.quest-filter-row::-webkit-scrollbar{display:none}.quest-grid{display:grid;gap:10px}.quest-card-v2{position:relative;overflow:hidden}.quest-card-v2.tracked{border-color:rgba(232,199,124,.32);box-shadow:inset 3px 0 0 #d9bd74}.quest-card-v2.completed{opacity:.78}.quest-top{display:flex;gap:11px;align-items:flex-start}.quest-glyph{display:grid;place-items:center;flex:0 0 auto;width:44px;height:44px;border:1px solid rgba(155,140,255,.17);border-radius:14px;background:rgba(155,140,255,.07);color:#dec98d;font-size:1.3rem}.quest-top h3{margin:7px 0 5px}.quest-top p{margin:0;color:var(--muted);font-size:.76rem;line-height:1.5}.quest-pin{flex:0 0 auto;width:36px;height:36px;border:1px solid var(--line);border-radius:12px;background:transparent;color:#797f96;font-size:1.1rem}.quest-pin.active{color:#e7ca7c;border-color:rgba(231,202,124,.3);background:rgba(231,202,124,.07)}.quest-progress-head{display:flex;justify-content:space-between;gap:8px;margin-top:13px;color:#aaaec1;font-size:.65rem}.quest-progress{margin:6px 0 12px}.objective-list{display:grid;gap:6px}.objective{display:flex;align-items:flex-start;gap:8px;padding:8px 9px;border-radius:11px;background:rgba(255,255,255,.023)}.objective>span{color:#8d91a8}.objective.done>span{color:#86d8ae}.objective div{display:grid;gap:2px}.objective strong{font-size:.7rem}.objective small{color:var(--muted);font-size:.6rem}.objective.done strong{text-decoration:line-through;text-decoration-color:rgba(255,255,255,.2);color:#8e958f}.quest-rewards{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#d7c58f;font-size:.65rem}.tracked-quest-banner{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:11px 13px;border:1px solid rgba(232,199,124,.18);border-radius:14px;background:rgba(232,199,124,.055)}.tracked-quest-banner span{color:#d9bd73;font-size:.65rem;font-weight:800}.tracked-quest-banner strong{font-size:.76rem}.tracked-quest-banner small{color:#b7aacb}.npc-journal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.npc-journal-card{display:grid;grid-template-columns:auto 1fr;gap:11px}.npc-journal-card>.button{grid-column:1/-1}.npc-portrait{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid rgba(155,140,255,.16);background:rgba(155,140,255,.06);color:#cfc4ff}.npc-journal-card h3{margin:0 0 6px}.npc-journal-card p{margin:7px 0;color:var(--muted);font-size:.72rem;line-height:1.45}.npc-journal-card small{color:#777f91;font-size:.62rem}
+
+/* Microanimações de qualidade alta — somente transform/opacity. */
+body[data-quality="cinematic"] .world-hub-link:hover,body[data-quality="cinematic"] .map-place-v2:hover,body[data-quality="cinematic"] .quest-card-v2:hover{transform:translateY(-2px)}
+body[data-quality="cinematic"] .scene-status-orb{animation:float-soft 5s ease-in-out infinite}
+@keyframes settings-fade{from{opacity:0}to{opacity:1}}
+@keyframes settings-rise{from{opacity:.2;transform:translate(-50%,40px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes scene-aurora{to{transform:rotate(360deg)}}
+@keyframes map-pulse{0%,100%{opacity:.72;transform:scale(.96)}50%{opacity:1;transform:scale(1.08)}}
+@keyframes float-soft{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+@media(max-width:700px){
+  .performance-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.performance-preset:last-child{grid-column:1/-1}
+  .event-possibility-grid,.map-place-grid,.npc-journal-grid{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .header-badges>.pill:not(:last-of-type){display:none}.game-settings-button{width:36px;height:36px;min-width:36px}
+  .scene-banner-v2{min-height:280px;padding:24px 18px}.scene-copy{max-width:82%}.scene-status-orb{right:16px;top:18px;width:72px;height:72px}.scene-status-orb small{font-size:.5rem}.scene-status-orb strong{font-size:.9rem}.scene-intro-note{left:18px;right:18px}
+  .event-radar-head{align-items:flex-start}.event-ring.large{width:74px;height:74px}.event-possibility-grid{grid-template-columns:1fr}
+  .atlas-frame svg{min-height:270px}.atlas-toolbar{align-items:flex-start}.atlas-toolbar .button{font-size:.62rem}.route-card{align-items:flex-start;flex-wrap:wrap}.route-card .button{margin-left:52px}
+  .settings-grid{grid-template-columns:1fr}.personal-settings-sheet{padding-inline:14px}.performance-presets{grid-template-columns:1fr}.performance-preset:last-child{grid-column:auto}.performance-preset{min-height:0;grid-template-columns:auto 1fr;grid-template-rows:auto auto}.performance-preset>span{grid-row:1/3}.performance-preset>small{grid-column:2}
+}
+@media(max-width:390px){.scene-copy{max-width:88%}.scene-status-orb{opacity:.68}.event-radar.compact .event-ring{width:46px;height:46px}.tracked-quest-mini{grid-template-columns:1fr auto}.tracked-quest-mini span{grid-column:1/-1}.narrative-v2{padding:17px}}
+@media(prefers-reduced-motion:reduce){.scene-aurora,.scene-status-orb,.atlas-node.current .node-halo,.world-orb-live::after,.personal-settings-backdrop,.personal-settings-sheet{animation:none!important}}
+body[data-motion="reduced"] .scene-aurora,body[data-motion="reduced"] .scene-status-orb,body[data-motion="reduced"] .atlas-node.current .node-halo,body[data-motion="reduced"] .world-orb-live::after{animation:none!important}

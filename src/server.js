@@ -110,6 +110,7 @@ async function apiHandler(request, response, url, service, config, systemStatus)
   if (method === 'POST' && pathname === '/api/profile/ai/test') return send(response,200,await service.testAi(user.id,await readJson(request,config.maxBodyBytes)));
   if (method === 'GET' && pathname === '/api/profile') return send(response, 200, service.profile(user.id));
   if (method === 'PATCH' && pathname === '/api/profile') return send(response, 200, await service.updateProfile(user.id, await readJson(request, config.maxBodyBytes)));
+  if (method === 'PATCH' && pathname === '/api/profile/preferences') return send(response, 200, await service.updatePreferences(user.id, await readJson(request, config.maxBodyBytes)));
   if (method === 'PATCH' && pathname === '/api/profile/password') return send(response, 200, await service.changePassword(user.id, tokenFrom(request), await readJson(request, config.maxBodyBytes)));
   if (method === 'POST' && pathname === '/api/profile/sessions/revoke-others') return send(response, 200, await service.revokeOtherSessions(user.id, tokenFrom(request)));
   if (method === 'PATCH' && pathname === '/api/profile/ai') return send(response, 200, await service.saveAiCredential(user.id, await readJson(request, config.maxBodyBytes)));
