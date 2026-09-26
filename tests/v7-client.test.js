@@ -6,15 +6,15 @@ import { client, register, testApplication } from './helpers.js';
 import { buyMarketItem, marketPresentation, sellInventoryItem } from '../src/game/economy.js';
 import { createDefaultCharacter } from '../src/game/engine.js';
 
-test('7.2 expõe metadados de cliente e bloqueia APIs durante manutenção', async (t) => {
+test('7.0 expõe metadados de cliente e bloqueia APIs durante manutenção', async (t) => {
   const app = await testApplication(); t.after(app.cleanup);
   const browser = client(app.base); await register(browser, 700);
 
   const meta = await browser.request('/api/client/meta');
   assert.equal(meta.status, 200);
   assert.equal(meta.data.name, 'Eidryss');
-  assert.equal(meta.data.version, '7.2.0');
-  assert.equal(meta.data.clientRevision, 720);
+  assert.equal(meta.data.version, '7.5.0');
+  assert.equal(meta.data.clientRevision, 750);
   assert.equal(meta.data.maintenance, false);
 
   await app.systemStatus.write({ maintenance: true, message: 'Aplicando a Reforja 7.0.' });
@@ -86,7 +86,7 @@ test('economia 7.0 compra, vende e reage ao risco do mundo', () => {
   const sold=sellInventoryItem(c,calm,item.id,1);assert.equal(sold.quantity,1);assert.ok(c.coins>before);
 });
 
-test('Arsenal Vivo expõe carteira, mercado e compra/venda na interface', async () => {
+test('Arsenal expõe carteira, mercado e compra/venda na interface', async () => {
   const source=await fs.readFile(path.resolve('public/app.js'),'utf8');
-  assert.match(source,/Economia Viva/);assert.match(source,/data-buy=/);assert.match(source,/data-sell=/);assert.match(source,/wallet-pill/);
+  assert.match(source,/Economia 7\.0/);assert.match(source,/data-buy=/);assert.match(source,/data-sell=/);assert.match(source,/wallet-pill/);
 });

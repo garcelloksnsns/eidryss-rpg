@@ -18,11 +18,12 @@ test('banco da versão anterior ganha ecossistema e aparência sem apagar a camp
   }));
   const store = await new JsonStore(file).init();
   const state = store.read();
-  assert.equal(state.schemaVersion, 11);
+  assert.equal(state.schemaVersion, 14);
   assert.equal(state.campaigns[0].world.location, 'Ponte velha');
   assert.equal(state.campaigns[0].settings.visualTheme, 'forest');
   assert.equal(Array.isArray(state.campaigns[0].world.ecosystem.resources), true);
   assert.equal(state.characters[0].presentation.avatar, '✦');
+  assert.equal(Array.isArray(state.characters[0].knownNpcIds), true);
 });
 
 test('cofre cifra e recupera chaves sem gravar o segredo em texto puro', async (t) => {

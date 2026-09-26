@@ -10,7 +10,7 @@ const root = new URL('..', import.meta.url).pathname;
 test('bottom navigation lives outside the animated page-content container', async () => {
   const app = await fs.readFile(path.join(root, 'public/app.js'), 'utf8');
   assert.match(app, /\$\{tabContent\}<\/div><button class="guide-bot"/);
-  assert.match(app, /<nav class="bottom-nav"/);
+  assert.match(app, /<nav class="bottom-nav bottom-nav-v73"/);
 });
 
 test('tab navigation participates in browser history so Android back returns to the previous tab', async () => {

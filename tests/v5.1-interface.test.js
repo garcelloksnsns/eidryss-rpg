@@ -16,22 +16,22 @@ test('6.0 mantém catálogo de classes e expõe caminhos avançados',()=>{
   assert.equal(CLASSES.length,24);
   assert.match(app,/function classesTab\(game\)/);
   assert.match(app,/24 classes · 72 caminhos/);
-  assert.match(app,/\['progression','⬡','Evolução'\]/);
+  assert.match(app,/\['progression','⬡','Evolução','Atributos, talentos e caminhos'\]/);
   assert.match(app,/data-class-pick/);
   assert.match(css,/\.class-grid/);
 });
 
-test('7.2 mostra sala multiplayer com mestragem distribuída',()=>{
-  assert.match(app,/Multiplayer 7\.2/);
+test('6.0 mostra sala multiplayer com mestragem distribuída',()=>{
+  assert.match(app,/Multiplayer 6\.0/);
   assert.match(app,/Mestre \+ co-mestres/);
   assert.match(app,/Entrada tardia/);
   assert.match(app,/Ausência segura/);
   assert.match(app,/Votação nativa/);
 });
 
-test('7.2 invalida cache antigo da interface',()=>{
-  assert.match(html,/style\.css\?v=720/);
-  assert.match(html,/app\.js\?v=720/);
-  assert.match(app,/sw\.js\?v=720/);
-  assert.match(sw,/eidryss-static-v720/);
+test('7.5 invalida cache antigo da interface',()=>{
+  assert.match(html,/style\.css\?v=750/);
+  assert.match(html,/app\.js\?v=750/);
+  assert.match(app,/sw\.js\?v=750/);
+  assert.match(sw,/eidryss-static-v750/);
 });

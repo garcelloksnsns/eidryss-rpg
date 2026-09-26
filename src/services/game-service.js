@@ -1,38 +1,20 @@
 import net from 'node:net';
 import { CLASSES, ITEMS, ATTRIBUTES, chooseClass, ensureProgression, allocate, train, makeItem, makeGeneratedItem, grantXp } from '../game/catalog.js';
-import { ensureAtlas, ensureWorldDirector, ensureQuestJournal, initializeIsekai, publicAtlas, publicBestiary, publicEventForecast } from '../game/world.js';
+import { ensureAtlas, ensureWorldDirector, initializeIsekai, publicAtlas, publicBestiary } from '../game/world.js';
 import { assert, AppError } from '../core/errors.js';
 import { hashPassword, newToken, tokenDigest, verifyPassword } from '../core/security.js';
 import { clamp, cleanText, joinCode, newId, normalizeUsername, nowIso, publicUser } from '../core/utils.js';
-import { createDefaultCharacter, effectiveAttributes, resolveMechanics, sanitizeAiDirectives } from '../game/engine.js';
+import { createDefaultCharacter, effectiveAttributes, relationshipState, resolveMechanics, sanitizeAiDirectives } from '../game/engine.js';
 import { MASTERY_RANKS, TALENTS, choosePath, derivedStats, gainAttributeMastery, masteryRankFor, nextMasteryRank, spendTalent } from '../game/progression.js';
 import { RECIPES, craft, recipeStatus } from '../game/crafting.js';
 import { buyMarketItem, marketPresentation, sellInventoryItem } from '../game/economy.js';
 import { advanceCampaignMemory, createCampaignMemory, ensureCampaignMemory } from '../game/memory.js';
+import { sanitizeNarrativeBundle } from '../game/narrative.js';
+import { buildSceneProjection, propagateSharedKnowledge } from '../game/perception.js';
 
 const PROVIDERS = new Set(['gemini', 'openai', 'grok', 'groq', 'openrouter', 'custom']);
 const VISUAL_THEMES = new Set(['forest', 'ocean', 'ember', 'cosmic']);
 const CHARACTER_AURAS = new Set(['folha', 'oceano', 'brasa', 'cosmico']);
-
-const PERFORMANCE_MODES = new Set(['auto','cinematic','balanced','light','ultra']);
-const MOTION_MODES = new Set(['full','reduced']);
-const DENSITY_MODES = new Set(['comfortable','compact']);
-const TEXT_SCALES = new Set(['small','normal','large','xl']);
-const MAP_DETAIL_MODES = new Set(['rich','standard','minimal']);
-
-function interfacePreferences(value = {}) {
-  const performanceMode = cleanText(value.performanceMode || 'auto', 20).toLowerCase();
-  const motionMode = cleanText(value.motionMode || 'full', 20).toLowerCase();
-  const density = cleanText(value.density || 'comfortable', 20).toLowerCase();
-  const textScale = cleanText(value.textScale || 'normal', 20).toLowerCase();
-  const mapDetail = cleanText(value.mapDetail || 'rich', 20).toLowerCase();
-  assert(PERFORMANCE_MODES.has(performanceMode), 'INVALID_PREFERENCE', 'Escolha um modo de desempenho válido.');
-  assert(MOTION_MODES.has(motionMode), 'INVALID_PREFERENCE', 'Escolha uma opção de animação válida.');
-  assert(DENSITY_MODES.has(density), 'INVALID_PREFERENCE', 'Escolha uma densidade de interface válida.');
-  assert(TEXT_SCALES.has(textScale), 'INVALID_PREFERENCE', 'Escolha um tamanho de texto válido.');
-  assert(MAP_DETAIL_MODES.has(mapDetail), 'INVALID_PREFERENCE', 'Escolha um nível de detalhe do mapa válido.');
-  return { performanceMode, motionMode, density, textScale, mapDetail, ambientEffects: value.ambientEffects !== false };
-}
 
 function userPresentation(value = {}) {
   const avatar = cleanText(value.avatar || '✦', 16) || '✦';
@@ -121,20 +103,28 @@ function safeCampaign(campaign) {
   };
 }
 
-function publicWorld(world, settings = {}) {
+function narrativeForCharacter(turn,character){const sceneId=turn?.sceneMembership?.[character?.id];return turn?.sceneNarratives?.[sceneId]?.narrative||turn?.narrative||'';}
+function eventVisibleTo(event,character,userId){if(event.privateUserId)return event.privateUserId===userId;if(Array.isArray(event.observerCharacterIds))return event.observerCharacterIds.includes(character?.id);return !event.visibility||event.visibility==='PUBLIC';}
+
+function publicWorld(world, character) {
   const director=ensureWorldDirector(world);
-  return {location:world.location,time:world.time,weather:world.weather,ecosystem:structuredClone(world.ecosystem),
+  const location=character?.location||world.location;const known=new Set(character?.knownNpcIds||[]);
+  const node=ensureAtlas(world).nodes.find(item=>item.name===location);const localState=world.localStates?.[location];const ecosystem={...structuredClone(world.ecosystem),biome:localState?.biome||node?.biome||world.ecosystem?.biome,dangerLevel:Number(localState?.dangerLevel??node?.dangerLevel??world.ecosystem?.dangerLevel??2),resources:structuredClone(localState?.resources||(location===world.location?world.ecosystem?.resources:[])||[])};
+  const npcLocation=npc=>npc.currentLocation||npc.location;const npcView=(npc)=>({id:npc.id,name:npc.name,description:npc.description,location:npcLocation(npc),status:npc.status,role:npc.role||npc.occupation,occupation:npc.occupation||npc.role||'',faction:npc.faction||'',disposition:npc.disposition||'',relationship:relationshipState(npc.relationships?.[character?.id])});
+  return {location,time:world.time,weather:world.weather,travel:character?.travel||null,spatial:character?.spatial||null,ecosystem,
     introduction:world.introduction?{phase:world.introduction.phase,completed:world.introduction.completed}:null,
-    atlas:publicAtlas(world), quests:structuredClone(ensureQuestJournal(world)), eventForecast:publicEventForecast(world,settings),
-    storyThreads:structuredClone(director.threads.filter(thread=>thread.status==='ACTIVE').slice(-6)),
+    atlas:publicAtlas(world,location,character?.knownLocationIds||[]), quests:structuredClone((world.quests||[]).filter(quest=>!quest.discoveredByCharacterIds||quest.discoveredByCharacterIds.includes(character?.id))),
+    storyThreads:structuredClone(director.threads.filter(thread=>thread.status==='ACTIVE'&&(!thread.location||thread.location===location)).slice(-6)),
     clocks:structuredClone((director.clocks||[]).filter(clock=>clock.visibility!=='PRIVATE').slice(-8)),
-    recentEvents:structuredClone((world.events||[]).slice(-5)),
+    recentEvents:structuredClone((world.events||[]).filter(event=>!event.location||event.location===location).slice(-5)),
     tension:director.tension,
-    entities:(world.entities||[]).filter(e=>!e.location||e.location===world.location).map(({id,name,description,hp,maxHp,status,threat})=>({id,name,description,hp,maxHp,status,threat})),
-    bestiary: publicBestiary(world),
-    knownNpcs:(world.npcs||[]).filter(n=>(world.knownNpcIds||[]).includes(n.id)||!n.location||n.location===world.location).map(({id,name,description,location,status,role})=>({id,name,description,location,status,role})),
-    npcs:(world.npcs||[]).filter(n=>n.location===world.location||!n.location).map(({id,name,description,status,location,role})=>({id,name,description,status,location,role}))};
+    entities:(world.entities||[]).filter(e=>!e.location||e.location===location).map(({id,name,description,hp,maxHp,status,threat,location})=>({id,name,description,hp,maxHp,status,threat,location})),
+    bestiary: publicBestiary(world).filter(entry=>(character?.knownBestiaryKeys||[]).includes(entry.key)),
+    knownNpcs:(world.npcs||[]).filter(n=>known.has(n.id)||!npcLocation(n)||npcLocation(n)===location).map(npcView),
+    npcs:(world.npcs||[]).filter(n=>npcLocation(n)===location||!npcLocation(n)).map(npcView)};
 }
+
+function placeCharacter(character,world){character.location=world.location;character.position=world.location;character.knownNpcIds=(world.npcs||[]).filter(n=>!(n.currentLocation||n.location)||(n.currentLocation||n.location)===world.location).map(n=>n.id);const atlas=ensureAtlas(world);const node=atlas.nodes.find(item=>item.name===world.location);character.knownLocationIds=[...new Set([...atlas.nodes.filter(item=>item.known).map(item=>item.id),...(node?[node.id]:[])])];character.knownFacts=[];character.knownBestiaryKeys=[];return character;}
 
 function defaultWorld(description) {
   return {
@@ -147,11 +137,11 @@ function defaultWorld(description) {
     npcs: [
       {
         id: newId(), name: 'Eira, guarda da trilha', description: 'Uma vigia paciente que conhece os caminhos da floresta.',
-        personality: 'Cautelosa, direta e leal a quem respeita o bosque.', location: 'Encruzilhada de Eidryss', inventory: [],
+        personality: 'Cautelosa, direta e leal a quem respeita o bosque.', values:['equilíbrio natural','palavra cumprida'],goals:['Manter viajantes vivos sem revelar todas as trilhas.'],fears:['Que o bosque seja explorado sem limite.'],interests:['rastros','mudanças no clima'],occupation:'guarda da trilha',homeLocation:'Encruzilhada de Eidryss',currentLocation:'Encruzilhada de Eidryss',faction:'Guardiões do Bosque',disposition:'CAUTIOUS',speechStyle:'Frases curtas, observações precisas e poucos elogios.',knowledge:['Trilhas do Vale de Aurora'],secrets:[],location: 'Encruzilhada de Eidryss', inventory: [],
         abilities: ['Conhecimento das trilhas'], memory: ['Observa o grupo desde sua chegada.'], status: 'ALIVE', relationships: {},
       },
     ],
-    events: [],
+    events: [], activeScenes:{}, localStates:{},
     discoveredLocations: ['Encruzilhada de Eidryss'],
     quests: [],
     flags: {},
@@ -179,7 +169,7 @@ function makeTurn(campaign, state) {
   return {
     id: newId(), campaignId: campaign.id, number: Math.max(0, ...priorNumbers) + 1,
     status: 'COLLECTING_ACTIONS', expectedPlayerIds: livingUsers, actionIds: [],
-    narrative: '', summary: '', result: null, provider: null, aiError: null,
+    narrative: '', sceneNarratives:{}, sceneMembership:{}, summary: '', result: null, provider: null, aiError: null,
     createdAt: nowIso(), resolvedAt: null,
   };
 }
@@ -206,6 +196,13 @@ function votePresentation(campaign, userId) {
 function touchCampaign(campaign) {
   campaign.updatedAt = nowIso();
   campaign.lastSavedAt = campaign.updatedAt;
+}
+
+function actionParts(input,maxLength) {
+  const source=typeof input==='object'&&input?input:{text:input};let text=cleanText(source.text,maxLength);let secretText=cleanText(source.secretText,maxLength);
+  if(!secretText){const match=text.match(/(?:^|\n)\s*a[cç][aã]o\s+secreta\s*:\s*([\s\S]+)$/i);if(match){secretText=cleanText(match[1],maxLength);text=cleanText(text.slice(0,match.index),maxLength);}}
+  if(!text&&secretText)text='Ajo com cautela sem revelar minha intenção.';
+  return {text,secretText};
 }
 
 function demoBotAction(character, turnNumber, world) {
@@ -240,7 +237,7 @@ export class GameService {
     const token = newToken();
     const created = await this.store.mutate((state) => {
       assert(!state.users.some((user) => user.username === username), 'USERNAME_TAKEN', 'Este nome de usuário já está em uso.', 409);
-      const user = { id: newId(), username, displayName, passwordHash, presentation: userPresentation(input.presentation), preferences: interfacePreferences(input.preferences || {}), createdAt: nowIso() };
+      const user = { id: newId(), username, displayName, passwordHash, presentation: userPresentation(input.presentation), createdAt: nowIso() };
       state.users.push(user);
       state.sessions.push({ id: newId(), userId: user.id, digest: tokenDigest(token), expiresAt: new Date(Date.now() + this.config.sessionTtlMs).toISOString(), createdAt: nowIso() });
       return publicUser(user);
@@ -282,7 +279,6 @@ export class GameService {
       assert(user, 'NOT_AUTHORIZED', 'Sessão inválida.', 401);
       return {
         user: publicUser(user),
-        preferences: interfacePreferences(user.preferences || {}),
         aiCredentials: {
           gemini: { configured: Boolean(user.aiCredentials?.gemini?.encryptedKey || this.config.geminiApiKey), model: user.aiCredentials?.gemini?.model || this.config.geminiModel, source: user.aiCredentials?.gemini?.encryptedKey ? 'profile' : this.config.geminiApiKey ? 'environment' : null },
           openai: { configured: Boolean(user.aiCredentials?.openai?.encryptedKey || this.config.openAiApiKey), model: user.aiCredentials?.openai?.model || this.config.openAiModel, source: user.aiCredentials?.openai?.encryptedKey ? 'profile' : this.config.openAiApiKey ? 'environment' : null },
@@ -349,18 +345,6 @@ export class GameService {
       return publicUser(user);
     });
     return { user: updated };
-  }
-
-
-  async updatePreferences(userId, input) {
-    const preferences = interfacePreferences(input || {});
-    await this.store.mutate((state) => {
-      const user = state.users.find((item) => item.id === userId);
-      assert(user, 'NOT_AUTHORIZED', 'Sessão inválida.', 401);
-      user.preferences = preferences;
-      user.updatedAt = nowIso();
-    });
-    return { preferences };
   }
 
   async saveAiCredential(userId, input) {
@@ -432,7 +416,7 @@ export class GameService {
       };
       initializeIsekai(item.world, ['origin','divine','arrival'].includes(input.introMode)?input.introMode:'divine');
       state.campaigns.push(item);
-      state.characters.push(createDefaultCharacter(userId, item.id, user.displayName));
+      state.characters.push(placeCharacter(createDefaultCharacter(userId, item.id, user.displayName),item.world));
       return safeCampaign(item);
     });
     console.info(`[INFO] Campanha criada: ${campaign.id} (${campaign.joinCode})`);
@@ -467,7 +451,7 @@ export class GameService {
         memory: createCampaignMemory('O grupo chegou a uma ponte antiga bloqueada por um goblin batedor.', 'Tutorial seguro e didático.'),
         createdAt: nowIso(), updatedAt: nowIso(), lastSavedAt: nowIso(),
       };
-      const human = createDefaultCharacter(userId, campaign.id, user.displayName);
+      const human = placeCharacter(createDefaultCharacter(userId, campaign.id, user.displayName),campaign.world);
       human.identity.title = 'Viajante de Eidryss';
       human.presentation = { avatar: '🧭', accent: '#71baff', aura: 'oceano' };
       state.characters.push(human);
@@ -481,7 +465,7 @@ export class GameService {
         const botUser = { id: newId(), username: `demo_${campaign.id.slice(0, 8)}_${index}`, displayName: bot.displayName, passwordHash: 'BOT_DISABLED', aiCredentials: {}, isBot: true, createdAt: nowIso() };
         state.users.push(botUser);
         campaign.memberIds.push(botUser.id);
-        const character = createDefaultCharacter(botUser.id, campaign.id, bot.displayName);
+        const character = placeCharacter(createDefaultCharacter(botUser.id, campaign.id, bot.displayName),campaign.world);
         chooseClass(character,['knight','swordsman','mage'][index]);
         character.identity.title = bot.title;
         character.presentation = [
@@ -514,7 +498,7 @@ export class GameService {
       assert(user, 'NOT_AUTHORIZED', 'Sessão inválida.', 401);
       campaign.memberIds.push(userId);
       touchCampaign(campaign);
-      const joinedCharacter=createDefaultCharacter(userId, campaign.id, user.displayName);
+      const joinedCharacter=placeCharacter(createDefaultCharacter(userId, campaign.id, user.displayName),campaign.world);
       joinedCharacter.joinedTurn=state.turns.find(t=>t.id===campaign.currentTurnId)?.number||1;
       state.characters.push(joinedCharacter);
       state.events.push({id:newId(),campaignId:campaign.id,turnId:campaign.currentTurnId||null,turnNumber:state.turns.find(t=>t.id===campaign.currentTurnId)?.number||null,type:'PLAYER_JOINED_LATE',sourceId:userId,targetId:null,data:{duringSession:campaign.state!=='LOBBY'},timestamp:nowIso()});
@@ -659,9 +643,10 @@ export class GameService {
     return result.campaign;
   }
 
-  async submitAction(campaignId, userId, textInput, { replace = false } = {}) {
-    const text = cleanText(textInput, this.config.maxActionLength);
+  async submitAction(campaignId, userId, actionInput, { replace = false } = {}) {
+    const {text,secretText}=actionParts(actionInput,this.config.maxActionLength);
     assert(text.length >= 3, 'INVALID_ACTION', 'Descreva sua ação com pelo menos 3 caracteres.');
+    assert(!secretText||secretText.length>=3,'INVALID_SECRET_ACTION','Descreva a ação secreta com pelo menos 3 caracteres.');
     const submission = await this.store.mutate((state) => {
       const campaign = campaignMember(state, campaignId, userId);
       assert(campaign.state === 'ACTIVE', 'CAMPAIGN_NOT_ACTIVE', 'A campanha não está ativa.', 409);
@@ -675,9 +660,11 @@ export class GameService {
       if (action) {
         assert(replace && campaign.settings.allowActionEdit, 'ACTION_ALREADY_SUBMITTED', 'Você já enviou sua ação neste turno.', 409);
         action.text = text;
+        action.secretText=secretText;
+        action.secretResult=null;
         action.updatedAt = nowIso();
       } else {
-        action = { id: newId(), campaignId, turnId: turn.id, userId, characterId: character.id, text, status: 'SUBMITTED', result: null, submittedAt: nowIso(), updatedAt: nowIso() };
+        action = { id: newId(), campaignId, turnId: turn.id, userId, characterId: character.id, text, secretText, status: 'SUBMITTED', result: null, secretResult:null, submittedAt: nowIso(), updatedAt: nowIso() };
         state.actions.push(action);
         turn.actionIds.push(action.id);
       }
@@ -714,7 +701,7 @@ export class GameService {
       const ready = turn.expectedPlayerIds.filter(hasAction).length;
       const total = turn.expectedPlayerIds.length;
       touchCampaign(campaign);
-      return { action: { id: action.id, status: action.status, updatedAt: action.updatedAt }, ready, total, active:participating.length, minimum, turnId: turn.id, shouldResolve };
+      return { action: { id: action.id, status: action.status, updatedAt: action.updatedAt, hasSecret:Boolean(action.secretText) }, ready, total, active:participating.length, minimum, turnId: turn.id, shouldResolve };
     });
     console.info(`[INFO] Jogador enviou ação (${submission.ready}/${submission.total})`);
     this.#broadcast(campaignId, 'ACTION_PROGRESS', { ready: submission.ready, total: submission.total });
@@ -797,7 +784,16 @@ export class GameService {
     let mechanics=context.turn.staged;
     if(!mechanics){
       mechanics=resolveMechanics({...context,turnNumber:context.turn.number});
-      await this.store.mutate(state=>{const turn=state.turns.find(t=>t.id===turnId);assert(turn?.status==='PROCESSING','TURN_SEALED','Turno indisponível.',409);turn.staged=mechanics;turn.snapshot={characters:context.characters,world:context.campaign.world};});
+      const publicCharacters=structuredClone(mechanics.characters);const publicWorld=structuredClone(mechanics.world);
+      const secretPhases=[];let privateState={characters:mechanics.characters,world:mechanics.world};
+      for(const action of context.actions.filter(item=>item.secretText)){
+        const secretAction={...action,id:`${action.id}:secret`,text:action.secretText,secretText:''};const secretCampaign=structuredClone(context.campaign);secretCampaign.world=privateState.world;
+        const resolved=resolveMechanics({campaign:secretCampaign,characters:privateState.characters,actions:[secretAction],turnNumber:context.turn.number,privatePhase:true});
+        const actor=resolved.characters.find(item=>item.id===action.characterId);secretPhases.push({actionId:action.id,userId:action.userId,characterId:action.characterId,text:action.secretText,outcome:resolved.outcomes[0]||null,events:resolved.events,character:actor,location:actor?.location||actor?.position||resolved.world.location});privateState={characters:resolved.characters,world:resolved.world};
+      }
+      const userByCharacter=Object.fromEntries(context.characters.map(character=>[character.id,character.userId]));const projection=buildSceneProjection(privateState.world,privateState.characters,mechanics.events,context.turn.number,userByCharacter);projection.turnId=context.turn.id;propagateSharedKnowledge(privateState.world,privateState.characters,projection);
+      mechanics={...mechanics,publicCharacters,publicWorld,characters:privateState.characters,world:privateState.world,secretPhases,projection,events:projection.canonicalEvents};
+      await this.store.mutate(state=>{const turn=state.turns.find(t=>t.id===turnId);assert(turn?.status==='PROCESSING','TURN_SEALED','Turno indisponível.',409);turn.staged=mechanics;turn.stagedSecretNarratives||={};turn.snapshot={characters:context.characters,world:context.campaign.world};});
     }
     this.#broadcast(campaignId,'TURN_PROCESSING',{turn:context.turn.number});
     let rawNarrative;
@@ -807,9 +803,9 @@ export class GameService {
     const fallbackProvider = context.campaign.settings.aiFallbackProvider || 'none';
     const devFailure=context.campaign.isDemo && this.config.devTools ? context.campaign.devFailure : null;
     try {
+      const cached=this.store.read(state=>state.turns.find(t=>t.id===turnId)?.stagedNarrative||null);if(cached)rawNarrative=cached;
       if(devFailure&&devFailure!=='none')throw new Error({quota:'Cota de teste esgotada (429).',timeout:'Tempo limite de teste.',invalid:'Resposta inválida de teste.',auth:'Chave de teste inválida (401).'}[devFailure]||'Falha de teste.');
-      const credential = this.#credentialFor(context.campaign.ownerId, primaryProvider);
-      rawNarrative = await this.narrative.generate({ ...context, mechanics }, credential);
+      if(!rawNarrative){const credential = this.#credentialFor(context.campaign.ownerId, primaryProvider);rawNarrative = await this.narrative.generate({ ...context, mechanics }, credential);}
     } catch (primaryError) {
       const primaryMessage = this.safeAiError(primaryError);
       const canFallback = fallbackProvider !== 'none' && fallbackProvider !== primaryProvider && this.#providerConfigured(context.campaign.ownerId, fallbackProvider);
@@ -846,9 +842,11 @@ export class GameService {
         return { awaitingAi: true, error: providerError };
       }
     }
-    const directives = sanitizeAiDirectives(rawNarrative, mechanics.characters.map((item) => item.id));
-    if (!directives.narrative) {
-      const message = 'A IA não retornou narrativa válida. Revise a chave/modelo e tente novamente.';
+    const bundle=sanitizeNarrativeBundle(rawNarrative,mechanics.projection,mechanics.secretPhases||[]);
+    const combinedNarrative=Object.values(bundle.scenes).map(scene=>scene.narrative).join('\n\n');
+    const directives = sanitizeAiDirectives({...rawNarrative,narrative:combinedNarrative,summary:bundle.summary||rawNarrative.summary,memory_updates:rawNarrative.memory_updates||{facts_add:bundle.memoryUpdates.factsAdd,facts_close:bundle.memoryUpdates.factsClose}});
+    if (!bundle.valid || !directives.narrative) {
+      const message = 'A IA não retornou o pacote multicena válido. Nenhum estado foi confirmado; revise a chave/modelo e tente novamente.';
       await this.store.mutate((state) => {
         const campaign = state.campaigns.find((item) => item.id === campaignId);
         const turn = state.turns.find((item) => item.id === turnId);
@@ -857,6 +855,19 @@ export class GameService {
       });
       this.#broadcast(campaignId, 'AI_ATTENTION_REQUIRED', { turn: context.turn.number });
       return { awaitingAi: true, error: message };
+    }
+    await this.store.mutate(state=>{const turn=state.turns.find(t=>t.id===turnId);if(turn?.status==='PROCESSING'&&!turn.stagedNarrative)turn.stagedNarrative=rawNarrative;});
+
+    const secretNarratives={};
+    for(const phase of mechanics.secretPhases||[]){
+      const bundled=bundle.privateFragments[phase.userId];if(bundled){secretNarratives[phase.actionId]={narrative:bundled.text,summary:bundled.summary||phase.outcome?.summary||'',provider:rawNarrative.provider||primaryProvider,npc_dialogues:[]};continue;}
+      const cached=this.store.read(state=>state.turns.find(t=>t.id===turnId)?.stagedSecretNarratives?.[phase.actionId]||null);if(cached){secretNarratives[phase.actionId]=cached;continue;}
+      try{
+        const secretAction={id:`${phase.actionId}:secret`,characterId:phase.characterId,text:phase.text};const generate=async provider=>{const secretCampaign=structuredClone(context.campaign);secretCampaign.settings={...secretCampaign.settings,aiProvider:provider,aiModel:provider===primaryProvider?context.campaign.settings.aiModel:(this.#credentialFor(context.campaign.ownerId,provider)?.model||''),aiBaseUrl:provider===primaryProvider?context.campaign.settings.aiBaseUrl:(this.#credentialFor(context.campaign.ownerId,provider)?.baseUrl||'')};secretCampaign.world=mechanics.world;const credential=this.#credentialFor(context.campaign.ownerId,provider);return typeof this.narrative.generateSecret==='function'?this.narrative.generateSecret({campaign:secretCampaign,turn:context.turn,character:phase.character,action:secretAction,outcome:phase.outcome,events:phase.events,world:mechanics.world},credential):{narrative:phase.outcome?.summary||'A tentativa secreta foi resolvida.',summary:phase.outcome?.summary||'',npc_dialogues:[],provider};};
+        let secret;try{secret=await generate(primaryProvider);}catch(primarySecretError){const canFallback=fallbackProvider!=='none'&&fallbackProvider!==primaryProvider&&this.#providerConfigured(context.campaign.ownerId,fallbackProvider);if(!canFallback)throw primarySecretError;secret=await generate(fallbackProvider);}
+        assert(typeof secret?.narrative==='string'&&secret.narrative.trim(),'INVALID_SECRET_RESPONSE','A IA não retornou a cena secreta.',502);secretNarratives[phase.actionId]=secret;
+        await this.store.mutate(state=>{const turn=state.turns.find(t=>t.id===turnId);if(turn?.status==='PROCESSING'){turn.stagedSecretNarratives||={};turn.stagedSecretNarratives[phase.actionId]=secret;}});
+      }catch(error){const message=`Cena secreta preservada: ${this.safeAiError(error)}`;await this.store.mutate(state=>{const turn=state.turns.find(t=>t.id===turnId);if(turn?.status==='PROCESSING'){turn.status='WAITING_FOR_AI';turn.aiError=message;}});this.#broadcast(campaignId,'AI_ATTENTION_REQUIRED',{turn:context.turn.number,secret:true});return {awaitingAi:true,error:message};}
     }
 
     const completed = await this.store.mutate((state) => {
@@ -884,24 +895,30 @@ export class GameService {
         ...providerEvents,
         ...directives.events.map((item) => ({ ...item, id: newId(), turnNumber: turn.number, timestamp: nowIso() })),
       ].map((item) => ({ ...item, campaignId, turnId }));
-      state.events.push(...allEvents);
+      const privateEvents=(mechanics.secretPhases||[]).flatMap(phase=>phase.events.map(item=>({...item,id:item.id||newId(),campaignId,turnId,visibility:'PRIVATE',scope:'PERSONAL',privateUserId:phase.userId,observerCharacterIds:[phase.characterId],data:{...item.data,private:true}})));
+      state.events.push(...allEvents,...privateEvents);
       for (const outcome of mechanics.outcomes) {
         const action = state.actions.find((item) => item.id === outcome.actionId);
         if (action) { action.status = 'RESOLVED'; action.result = outcome; }
       }
+      for(const phase of mechanics.secretPhases||[]){const action=state.actions.find(item=>item.id===phase.actionId);if(action)action.secretResult={narrative:cleanText(secretNarratives[phase.actionId]?.narrative,12000),summary:cleanText(secretNarratives[phase.actionId]?.summary||phase.outcome?.summary,1200),outcome:phase.outcome,provider:secretNarratives[phase.actionId]?.provider||turn.provider||campaign.settings.aiProvider};}
       delete turn.staged;
+      delete turn.stagedNarrative;delete turn.stagedSecretNarratives;
       turn.status = 'RESOLVED';
       turn.aiError = null;
-      turn.narrative = directives.narrative;
+      turn.sceneNarratives = bundle.scenes;
+      turn.sceneMembership = mechanics.projection?.membership || {};
+      turn.narrative = mechanics.projection?.scenes?.length===1 ? directives.narrative : bundle.summary || directives.summary || 'As cenas do turno foram resolvidas.';
       turn.summary = directives.summary || mechanics.outcomes.map((item) => item.summary).join(' ');
       turn.provider = rawNarrative.provider || campaign.settings.aiProvider;
       turn.result = { outcomes: mechanics.outcomes, events: allEvents, providerError };
       turn.resolvedAt = nowIso();
-      advanceCampaignMemory(campaign, { turnNumber: turn.number, summary: turn.summary, memoryUpdates: directives.memoryUpdates, events: allEvents, actions: state.actions.filter((action) => action.turnId === turn.id) });
-      for(const dialogue of (Array.isArray(rawNarrative.npc_dialogues)?rawNarrative.npc_dialogues:[]).slice(0,6)){
+      advanceCampaignMemory(campaign, { turnNumber: turn.number, summary: turn.summary, memoryUpdates: directives.memoryUpdates, events: allEvents, actions: state.actions.filter((action) => action.turnId === turn.id), characters:mechanics.characters });
+      for(const phase of mechanics.secretPhases||[]){const privateNote=cleanText(secretNarratives[phase.actionId]?.summary||phase.outcome?.summary,400);if(privateNote){campaign.memory.personalFacts[phase.characterId]=[...(campaign.memory.personalFacts[phase.characterId]||[]),{turn:turn.number,type:'SECRET_ACTION',text:privateNote,private:true}].slice(-30);}for(const event of phase.events.filter(item=>item.type==='NPC_RELATION_CHANGED')){const record=campaign.memory.npcMemories[event.targetId];if(!record)continue;record.interactions.push({turn:turn.number,characterId:phase.characterId,text:cleanText(phase.text,500),private:true,witnesses:[phase.characterId],location:phase.location});const note=cleanText(secretNarratives[phase.actionId]?.summary||event.data?.description,400);record.privateFacts||={};if(note)record.privateFacts[phase.characterId]=[...(record.privateFacts[phase.characterId]||[]),note].slice(-12);}}
+      for(const dialogue of bundle.npcDialogues.slice(0,12)){
         if(!dialogue||typeof dialogue.npc_id!=='string')continue;
-        const npc=campaign.world.npcs.find(n=>n.id===dialogue.npc_id&&(!n.location||n.location===campaign.world.location));
-        const involved=npc&&context.actions.filter(a=>a.text.toLocaleLowerCase().includes(npc.name.toLocaleLowerCase()));
+        const npc=campaign.world.npcs.find(n=>n.id===dialogue.npc_id);
+        const involved=npc&&context.actions.filter(a=>{const actor=mechanics.characters.find(character=>character.id===a.characterId);const location=actor?.location||actor?.position||campaign.world.location;return (!npc.location||npc.location===location)&&a.text.toLocaleLowerCase().includes(npc.name.toLocaleLowerCase());});
         if(!npc||!involved.length)continue;
         const record=campaign.memory.npcMemories[npc.id];if(!record)continue;
         record.interactions.push({turn:turn.number,speakerId:npc.id,text:cleanText(dialogue.reply,800),witnesses:involved.map(a=>a.characterId)});
@@ -935,7 +952,7 @@ export class GameService {
       const party = campaign.memberIds.map((memberId) => {
         const user = state.users.find((item) => item.id === memberId);
         const memberCharacter = state.characters.find((item) => item.campaignId === campaignId && item.userId === memberId);
-        return { user: publicUser(user), online: Boolean(user?.isBot || this.hub?.isOnline?.(campaignId, memberId)), away:Boolean((campaign.awayUserIds||[]).includes(memberId)), lobbyReady:Boolean((campaign.lobbyReadyUserIds||[]).includes(memberId)), isOwner:campaign.ownerId===memberId, isMaster:(campaign.masterUserId||campaign.ownerId)===memberId, isCoMaster:(campaign.coMasterUserIds||[]).includes(memberId), character: memberCharacter ? { id: memberCharacter.id, name: memberCharacter.identity.name, resources: memberCharacter.resources, status: memberCharacter.status, position: memberCharacter.position, level:memberCharacter.level, className:memberCharacter.identity.class, ready:state.actions.some(a=>a.turnId===campaign.currentTurnId&&a.userId===memberId), presentation: characterPresentation(memberCharacter.presentation || {}) } : null };
+        return { user: publicUser(user), online: Boolean(user?.isBot || this.hub?.isOnline?.(campaignId, memberId)), away:Boolean((campaign.awayUserIds||[]).includes(memberId)), lobbyReady:Boolean((campaign.lobbyReadyUserIds||[]).includes(memberId)), isOwner:campaign.ownerId===memberId, isMaster:(campaign.masterUserId||campaign.ownerId)===memberId, isCoMaster:(campaign.coMasterUserIds||[]).includes(memberId), character: memberCharacter ? { id: memberCharacter.id, name: memberCharacter.identity.name, resources: memberCharacter.resources, status: memberCharacter.status, position: memberCharacter.position, location:memberCharacter.location||memberCharacter.position||campaign.world.location, level:memberCharacter.level, className:memberCharacter.identity.class, ready:state.actions.some(a=>a.turnId===campaign.currentTurnId&&a.userId===memberId), presentation: characterPresentation(memberCharacter.presentation || {}) } : null };
       });
       const turn = state.turns.find((item) => item.id === campaign.currentTurnId) || null;
       const currentActions = turn ? state.actions.filter((item) => item.turnId === turn.id) : [];
@@ -954,11 +971,11 @@ export class GameService {
       return {
         catalog: {classes:CLASSES,items:ITEMS,attributes:ATTRIBUTES,talents:TALENTS,masteryRanks:MASTERY_RANKS,recipes:RECIPES.map(recipe=>({...recipe,status:recipeStatus(character,recipe)})),market:marketPresentation(character,campaign.world)}, devTools:Boolean(this.config.devTools&&campaign.ownerId===userId&&campaign.isDemo),
         audit:state.events.filter(e=>e.campaignId===campaignId&&(e.type.startsWith('HOST_')||e.type.startsWith('MASTER_')||e.type==='PLAYER_AVAILABILITY')).slice(-40),
-        campaign: { ...safeCampaign(campaign), world: publicWorld(campaign.world, campaign.settings), summary: campaign.summary },
+        campaign: { ...safeCampaign(campaign), world: publicWorld(campaign.world,character), summary: campaign.summary },
         character: (()=>{ ensureProgression(character); const attrs=effectiveAttributes(character); return {...character,legacyPowers:undefined,effectiveAttributes:attrs,derivedStats:derivedStats(character,attrs),masterySummary:Object.fromEntries(Object.keys(ATTRIBUTES).map(key=>{const xp=character.masteries?.[key]?.xp||0;const rank=masteryRankFor(xp);const next=nextMasteryRank(xp);return [key,{xp,uses:character.masteries?.[key]?.uses||0,rank,next}];}))}; })(),
         party,
-        turn: turn ? { id: turn.id, number: turn.number, status: turn.status, ready: currentActions.length, total: turn.expectedPlayerIds.length, active: turn.expectedPlayerIds.filter(id=>state.users.find(u=>u.id===id)?.isBot || this.hub?.isOnline?.(campaignId,id) || currentActions.some(a=>a.userId===id)).length, minimum: Math.min(turn.expectedPlayerIds.length,Math.max(1,Number(campaign.settings.minPlayers||1))), aiError: (campaign.ownerId === userId || (campaign.masterUserId||campaign.ownerId)===userId) ? turn.aiError || null : null, myAction: myAction ? { id: myAction.id, text: myAction.text, status: myAction.status } : null } : null,
-        lastResult: lastTurn ? { number: lastTurn.number, narrative: lastTurn.narrative, summary: lastTurn.summary, provider: lastTurn.provider, resolvedAt: lastTurn.resolvedAt, events: state.events.filter(event=>event.turnId===lastTurn.id).slice(-20).map(event=>({type:event.type,data:event.data})) } : null,
+        turn: turn ? { id: turn.id, number: turn.number, status: turn.status, ready: currentActions.length, total: turn.expectedPlayerIds.length, active: turn.expectedPlayerIds.filter(id=>state.users.find(u=>u.id===id)?.isBot || this.hub?.isOnline?.(campaignId,id) || currentActions.some(a=>a.userId===id)).length, minimum: Math.min(turn.expectedPlayerIds.length,Math.max(1,Number(campaign.settings.minPlayers||1))), aiError: (campaign.ownerId === userId || (campaign.masterUserId||campaign.ownerId)===userId) ? turn.aiError || null : null, myAction: myAction ? { id: myAction.id, text: myAction.text, secretText:myAction.secretText||'', hasSecret:Boolean(myAction.secretText), status: myAction.status } : null } : null,
+        lastResult: lastTurn ? { number: lastTurn.number, narrative:narrativeForCharacter(lastTurn,character), sceneId:lastTurn.sceneMembership?.[character?.id]||null, secretNarrative:state.actions.find(action=>action.turnId===lastTurn.id&&action.userId===userId)?.secretResult?.narrative||'', summary: lastTurn.summary, provider: lastTurn.provider, resolvedAt: lastTurn.resolvedAt, events: state.events.filter(event=>event.turnId===lastTurn.id&&eventVisibleTo(event,character,userId)).slice(-20).map(event=>({eventId:event.id,type:event.type,scope:event.scope,data:event.data,private:event.privateUserId===userId})) } : null,
         isOwner: campaign.ownerId === userId,
         isMaster: (campaign.masterUserId || campaign.ownerId) === userId,
         isCoMaster: (campaign.coMasterUserIds || []).includes(userId),
@@ -1074,40 +1091,51 @@ export class GameService {
       state.events.push({ id: newId(), campaignId, turnId: campaign.currentTurnId, turnNumber: state.turns.find((turn) => turn.id === campaign.currentTurnId)?.number || null, type: 'CAMPAIGN_SAVED', sourceId: userId, targetId: null, data: { manual: true }, timestamp: campaign.lastSavedAt });
       return { savedAt: campaign.lastSavedAt, campaignId };
     });
+    const checkpointPath=await this.store.checkpoint(`campaign-${campaignId}`);
+    saved.checkpointCreated=Boolean(checkpointPath);
     this.#broadcast(campaignId, 'CAMPAIGN_SAVED', saved);
     return saved;
   }
 
-  exportCampaign(campaignId, userId) {
+  exportCampaign(campaignId, userId, { raw = false } = {}) {
     return this.store.read((state) => {
       const campaign = campaignMember(state, campaignId, userId);
       assert(campaign.ownerId === userId, 'NOT_AUTHORIZED', 'Somente o líder pode exportar o backup.', 403);
+      const ownerCharacter=state.characters.find(character=>character.campaignId===campaignId&&character.userId===userId);const exportedCampaign=structuredClone(campaign);
+      if(!raw&&exportedCampaign.memory){
+        for(const [characterId,facts] of Object.entries(exportedCampaign.memory.personalFacts||{}))if(characterId!==ownerCharacter?.id)exportedCampaign.memory.personalFacts[characterId]=(facts||[]).map(fact=>({...fact,text:'[MEMÓRIA PRIVADA]'}));
+        for(const record of Object.values(exportedCampaign.memory.npcMemories||{})){record.interactions=(record.interactions||[]).map(interaction=>interaction.private&&!interaction.witnesses?.includes(ownerCharacter?.id)?{...interaction,text:'[AÇÃO PRIVADA]'}:interaction);for(const characterId of Object.keys(record.privateFacts||{}))if(characterId!==ownerCharacter?.id)record.privateFacts[characterId]=['[MEMÓRIA PRIVADA]'];}
+      }
       return {
-        format: 'EIDRYSS_CAMPAIGN_BACKUP', version: 1, exportedAt: nowIso(),
-        campaign: structuredClone(campaign),
+        format: raw?'EIDRYSS_CAMPAIGN_OWNER_RAW_BACKUP':'EIDRYSS_CAMPAIGN_BACKUP', version: 2, exportedAt: nowIso(),privacy:raw?'OWNER_RAW':'REDACTED',
+        campaign: exportedCampaign,
         members: campaign.memberIds.map((id) => publicUser(state.users.find((user) => user.id === id))),
         characters: state.characters.filter((item) => item.campaignId === campaignId),
-        turns: state.turns.filter((item) => item.campaignId === campaignId).map(({staged,snapshot,...turn})=>turn),
+        turns: state.turns.filter((item) => item.campaignId === campaignId).map(({staged,snapshot,stagedNarrative,stagedSecretNarratives,...turn})=>{if(raw)return turn;const sceneId=turn.sceneMembership?.[ownerCharacter?.id];return {...turn,narrative:narrativeForCharacter(turn,ownerCharacter),sceneNarratives:sceneId&&turn.sceneNarratives?.[sceneId]?{[sceneId]:turn.sceneNarratives[sceneId]}:{}};}),
         actions: state.actions.filter((item) => item.campaignId === campaignId).map((action) => {
           const turn = state.turns.find((item) => item.id === action.turnId);
-          return turn?.status === 'RESOLVED' ? action : { ...action, text: '[AÇÃO SELADA ATÉ O TURNO SER RESOLVIDO]' };
+          const visible=raw||action.userId===userId;const safeAction=visible?action:{...action,secretText:action.secretText?'[AÇÃO PRIVADA]':'',secretResult:action.secretResult?{narrative:'[NARRATIVA PRIVADA]',summary:'[MEMÓRIA PRIVADA]'}:null};
+          return turn?.status === 'RESOLVED' ? safeAction : { ...safeAction, text: '[AÇÃO SELADA ATÉ O TURNO SER RESOLVIDO]',secretText:safeAction.secretText?'[AÇÃO PRIVADA]':'' };
         }),
-        events: state.events.filter((item) => item.campaignId === campaignId),
+        events: state.events.filter((item) => item.campaignId === campaignId&&(raw||eventVisibleTo(item,ownerCharacter,userId))),
       };
     });
   }
 
+  exportCampaignRaw(campaignId,userId){return this.exportCampaign(campaignId,userId,{raw:true});}
+
   history(campaignId, userId) {
     return this.store.read((state) => {
       campaignMember(state, campaignId, userId);
+      const character=state.characters.find(item=>item.campaignId===campaignId&&item.userId===userId);
       return state.turns.filter((turn) => turn.campaignId === campaignId && turn.status === 'RESOLVED').sort((a, b) => b.number - a.number).map((turn) => ({
-        id: turn.id, number: turn.number, narrative: turn.narrative, summary: turn.summary, provider: turn.provider,
+        id: turn.id, number: turn.number, narrative:narrativeForCharacter(turn,character),sceneId:turn.sceneMembership?.[character?.id]||null, summary: turn.summary, provider: turn.provider,
         createdAt: turn.createdAt, resolvedAt: turn.resolvedAt,
         actions: state.actions.filter((action) => action.turnId === turn.id).map((action) => {
           const character = state.characters.find((item) => item.id === action.characterId);
-          return { characterName: character?.identity.name || 'Desconhecido', text: action.text, result: action.result };
+          return { characterName: character?.identity.name || 'Desconhecido', text: action.text, result: action.result, ...(action.userId===userId&&action.secretText?{secretText:action.secretText,secretResult:action.secretResult}: {}) };
         }),
-        events: state.events.filter((item) => item.turnId === turn.id),
+        events: state.events.filter((item) => item.turnId === turn.id&&eventVisibleTo(item,character,userId)),
       }));
     });
   }
@@ -1227,7 +1255,7 @@ export class GameService {
     const credential=suppliedKey?{apiKey:suppliedKey,model,baseUrl}:saved;
     assert(credential?.apiKey,'AI_CONFIGURATION_REQUIRED','Nenhuma chave foi informada ou salva para este provedor.');
     const context={campaign:{name:'Teste de conexão',settings:{aiProvider:provider,aiModel:model,aiBaseUrl:baseUrl,tone:'Responda apenas: Conexão confirmada.',worldRules:''},world:{location:'Teste',npcs:[],entities:[]}},turn:{number:0},characters:[],actions:[],mechanics:{outcomes:[],events:[]}};
-    try{const result=await this.narrative.generate(context,credential);assert(typeof result.narrative==='string'&&result.narrative.trim(),'INVALID_RESPONSE','Resposta inválida.');return {ok:true,provider,model:result.model||context.campaign.settings.aiModel,testedUnsavedKey:Boolean(suppliedKey)};}catch(error){throw new AppError('AI_TEST_FAILED',this.safeAiError(error),502);}
+    try{const result=await this.narrative.generate(context,credential);const hasNarrative=typeof result.narrative==='string'&&result.narrative.trim()||Array.isArray(result.scenes)&&result.scenes.some(scene=>typeof scene?.narrative==='string'&&scene.narrative.trim());assert(hasNarrative,'INVALID_RESPONSE','Resposta inválida.');return {ok:true,provider,model:result.model||context.campaign.settings.aiModel,testedUnsavedKey:Boolean(suppliedKey)};}catch(error){throw new AppError('AI_TEST_FAILED',this.safeAiError(error),502);}
   }
 
   safeAiError(error){

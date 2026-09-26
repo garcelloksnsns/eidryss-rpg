@@ -1,8 +1,59 @@
-# Eidryss 7.2 — Horizonte Vivo
+# Eidryss 7.5 — Realidade Compartilhada
 
 Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em Node.js, Mestre IA, mundo persistente e cliente Android. O celular do Host continua sendo o servidor pelo Termux; o APK funciona como cliente e recebe a interface atualizada do próprio servidor.
 
-## Destaques da 7.2
+## Novidades da 7.5
+
+- uma única realidade autoritativa com várias janelas narrativas por cena;
+- **uma requisição narrativa por turno**, mesmo com jogadores separados;
+- ações secretas podem voltar na mesma resposta estruturada, com fallback seguro preservado;
+- eventos canônicos com `eventId` e alcance PERSONAL, LOCAL, NEARBY, REGIONAL ou GLOBAL;
+- visibilidade decidida pelo servidor conforme posição, zona, rota, distância e região;
+- monstros e NPCs possuem posição e última ação únicas, projetadas para todos os observadores;
+- movimento por oito direções, estrada, trilha, rio, ponte, floresta, montanha e “para frente”;
+- viagens longas guardam progresso em quilômetros e não teleportam o personagem;
+- jogadores em sentidos opostos podem se encontrar no mesmo trecho da rota;
+- encontros de viagem pertencem à rota e são criados uma única vez para viajantes próximos;
+- descobertas visíveis são propagadas aos presentes sem misturar conhecimento privado;
+- schema 14, revisão web 750 e backup automático `.pre-v14`.
+
+Veja `CHANGELOG-7.5.0.md` e `PATCH-7.5.0.md`.
+
+## Recursos preservados da 7.4
+
+- **cenas ativas por localização**: jogadores separados vivem acontecimentos locais diferentes sem multiplicar chamadas de IA;
+- geografia canônica com rotas, terreno, direção, distância, obstáculos, pontes e requisitos de travessia;
+- Atlas de fantasia em SVG/CSS, com terreno, rios, serras, estradas, neblina de guerra e rotas bloqueadas;
+- Context Builder seletivo que recupera cena, região, personagem, referências citadas e fatos globais resumidos;
+- NPCs persistentes com personalidade, valores, objetivos, medos, voz, localização, conhecimento e relações individuais;
+- relações por jogador com Afeto, Confiança e Desconfiança fundamentadas em acontecimentos relevantes;
+- conhecimento, descobertas, bestiário e memórias privadas por personagem;
+- missões estruturadas, cujos objetivos avançam pelo motor autoritativo;
+- exportação normal protegida e backup bruto separado, disponível apenas ao proprietário;
+- botão **Salvar campanha** com flush e checkpoint local sem gasto de API;
+- compatibilidade automática com campanhas 7.2/7.3, backup pré-migração e schema 13;
+- revisão web 740; o cliente Android existente atualiza a interface sem alteração nativa.
+
+O relatório técnico completo está em `CHANGELOG-7.4.0.md` e as instruções do pacote incremental em `PATCH-7.4.0.md`.
+
+## Recursos preservados da 7.3
+
+- navegação inferior enxuta com quatro áreas principais e botão **+ Mais** animado;
+- correção do banner do Santuário: título, descrição, aviso e ornamentos não se sobrepõem;
+- localização persistente por personagem, permitindo que o grupo se divida;
+- Atlas marca **onde você está**, não um local global fictício do grupo;
+- conversa com NPC exige presença física na mesma localidade;
+- diário pessoal de NPCs conhecidos por personagem;
+- relações individuais com **Afeto, Confiança e Desconfiança**;
+- compositor dedicado de ação secreta e atalho textual `Ação secreta:`;
+- cena secreta narrada em chamada compacta separada e devolvida somente ao autor;
+- retry de cena secreta reutiliza a narrativa compartilhada já válida, evitando cobrar tokens novamente;
+- contexto principal da IA carrega somente as localidades ativas, entidades locais e memórias relevantes;
+- migração e backup legados preservados.
+
+Detalhes técnicos e garantias de privacidade da versão anterior continuam em `PATCH-7.3.0.md`.
+
+## O que mudou na 7.0
 
 - nova identidade **Eidryss**, novo sigilo e splash animado;
 - interface remasterizada com navegação mobile, microanimações e modo leve;
@@ -15,12 +66,6 @@ Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em 
 - modo de manutenção e revisão de cliente para atualizar a interface sem reinstalar APK;
 - cliente Android nativo para splash/conexão/manutenção/cache + WebView segura para a interface viva;
 - GitHub Actions pronto para compilar um APK sem computador.
-- Atlas Vivo 2.0 com terreno vetorial, rotas, risco e fronteiras ocultas;
-- Diário Vivo com objetivos, progresso, recompensas e missão acompanhada;
-- eventos contextuais em viagem e combate, incluindo reforços inesperados;
-- radar de possibilidades do mundo sem transformar eventos em garantias;
-- preferências visuais por jogador com cinco modos de desempenho;
-- client revision 720 e migração de banco schema 11.
 
 
 ## Persistência entre versões
@@ -93,7 +138,7 @@ Ele é instalável diretamente. Para atualizações nativas sem precisar desinst
 npm test
 ```
 
-A 7.0 possui testes de engine, autenticação, persistência, multiplayer, mundo vivo, progressão, manutenção, cache e pipeline Android.
+A suíte cobre engine, autenticação, persistência, multiplayer, mundo vivo, progressão, privacidade, ação secreta, distância, economia de contexto, manutenção, cache e pipeline Android. Consulte `CHANGELOG-7.4.0.md` para saber exatamente quais verificações foram executadas nesta entrega.
 
 ## Segurança
 

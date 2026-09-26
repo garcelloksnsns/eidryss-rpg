@@ -110,7 +110,6 @@ async function apiHandler(request, response, url, service, config, systemStatus)
   if (method === 'POST' && pathname === '/api/profile/ai/test') return send(response,200,await service.testAi(user.id,await readJson(request,config.maxBodyBytes)));
   if (method === 'GET' && pathname === '/api/profile') return send(response, 200, service.profile(user.id));
   if (method === 'PATCH' && pathname === '/api/profile') return send(response, 200, await service.updateProfile(user.id, await readJson(request, config.maxBodyBytes)));
-  if (method === 'PATCH' && pathname === '/api/profile/preferences') return send(response, 200, await service.updatePreferences(user.id, await readJson(request, config.maxBodyBytes)));
   if (method === 'PATCH' && pathname === '/api/profile/password') return send(response, 200, await service.changePassword(user.id, tokenFrom(request), await readJson(request, config.maxBodyBytes)));
   if (method === 'POST' && pathname === '/api/profile/sessions/revoke-others') return send(response, 200, await service.revokeOtherSessions(user.id, tokenFrom(request)));
   if (method === 'PATCH' && pathname === '/api/profile/ai') return send(response, 200, await service.saveAiCredential(user.id, await readJson(request, config.maxBodyBytes)));
@@ -146,11 +145,12 @@ async function apiHandler(request, response, url, service, config, systemStatus)
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/resume$/)) && method === 'POST') return send(response, 200, { campaign: await service.pauseCampaign(params[0], user.id, false) });
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/action$/)) && (method === 'POST' || method === 'PUT')) {
     const body = await readJson(request, config.maxBodyBytes);
-    return send(response, 200, await service.submitAction(params[0], user.id, body.text, { replace: method === 'PUT' }));
+    return send(response, 200, await service.submitAction(params[0], user.id, {text:body.text,secretText:body.secretText}, { replace: method === 'PUT' }));
   }
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/force-resolve$/)) && method === 'POST') return send(response, 200, await service.forceResolve(params[0], user.id));
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/retry-ai$/)) && method === 'POST') return send(response, 200, await service.retryTurn(params[0], user.id));
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/save$/)) && method === 'POST') return send(response, 200, await service.saveCampaign(params[0], user.id));
+  if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/export\/raw$/)) && method === 'GET') return send(response, 200, service.exportCampaignRaw(params[0], user.id), { 'content-disposition': `attachment; filename="eidryss-owner-raw-${params[0]}.json"` });
   if ((params = match(pathname, /^\/api\/campaigns\/([^/]+)\/export$/)) && method === 'GET') return send(response, 200, service.exportCampaign(params[0], user.id), { 'content-disposition': `attachment; filename="eidryss-campaign-${params[0]}.json"` });
 
   throw new AppError('NOT_FOUND', 'Rota não encontrada.', 404);

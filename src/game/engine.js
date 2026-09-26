@@ -1,16 +1,18 @@
 import crypto from 'node:crypto';
 import { CLASSES, chooseClass, ensureProgression, grantXp, makeItem, STORY_SKILLS } from './catalog.js';
 import { gainAttributeMastery, gainSkillMastery, masteryBonus, masteryRankFor, pathModifiers, talentModifiers } from './progression.js';
-import { progressWorld, updateBestiaryKnowledge } from './world.js';
+import { ensureAtlas, progressWorld, resolveTravelIntent, updateBestiaryKnowledge } from './world.js';
+import { buildSceneProjection, propagateSharedKnowledge } from './perception.js';
 import { clamp, cleanText, newId, nowIso } from '../core/utils.js';
 
 const EVENT_TYPES = new Set([
   'DAMAGE', 'HEAL', 'ITEM_GAINED', 'ITEM_LOST', 'STATUS_APPLIED', 'STATUS_REMOVED',
   'CHARACTER_MOVED', 'POWER_USED', 'CHARACTER_DIED', 'CHARACTER_INCAPACITATED',
-  'DISCOVERY', 'QUEST_STARTED', 'QUEST_UPDATED', 'QUEST_COMPLETED', 'WORLD_CHANGED', 'ACTION_RESOLVED',
-  'RESOURCE_GATHERED', 'RESOURCE_RESPAWNED', 'RESTED', 'NPC_RELATION_CHANGED', 'COINS_GAINED',
+  'DISCOVERY', 'QUEST_STARTED', 'QUEST_COMPLETED', 'WORLD_CHANGED', 'ACTION_RESOLVED',
+  'RESOURCE_GATHERED', 'RESOURCE_RESPAWNED', 'RESTED', 'NPC_RELATION_CHANGED',
   'WORLD_EVENT', 'NPC_ARRIVED', 'ENCOUNTER_STARTED', 'ENEMY_ACTED', 'STORY_THREAD_STARTED',
   'ACTION_CHECKED', 'COMPLICATION', 'WORLD_CLOCK_ADVANCED', 'WORLD_CLOCK_COMPLETED',
+  'TRAVEL_BLOCKED', 'TRAVEL_PROGRESS',
   'ATTRIBUTE_MASTERY_GAINED', 'ATTRIBUTE_MASTERY_RANK_UP', 'SKILL_MASTERY_GAINED', 'SKILL_MASTERY_RANK_UP',
 ]);
 
@@ -53,6 +55,7 @@ function advanceEcosystem(world, turnNumber, events) {
       events.push(event(turnNumber, 'RESOURCE_RESPAWNED', null, resource.id, { resource: resource.name, quantity: resource.quantity }));
     }
   }
+  for(const [location,state] of Object.entries(world.localStates||{}))for(const resource of state.resources||[]){if(resource.quantity===0&&Number(resource.nextRespawnTurn||Infinity)<=turnNumber){resource.quantity=Math.max(1,resource.maxQuantity);delete resource.nextRespawnTurn;events.push(event(turnNumber,'RESOURCE_RESPAWNED',null,resource.id,{resource:resource.name,quantity:resource.quantity,location}));}}
   events.push(event(turnNumber, 'WORLD_CHANGED', null, null, {
     time: world.time, weather: world.weather, biome: ecosystem.biome, respawned,
   }));
@@ -95,6 +98,8 @@ export function createDefaultCharacter(userId, campaignId, name) {
     experience: 0,
     status: 'ALIVE',
     position: 'Ponto inicial',
+    location: 'Encruzilhada de Eidryss',
+    knownNpcIds: [],
     inventory: [
       {
         id: newId(), name: 'Poção de Vida', description: 'Recupera 25 HP.', type: 'CONSUMABLE',
@@ -179,22 +184,46 @@ function classify(text) {
   if (/esquiv|desvi|rolamento/.test(value)) return 'DODGE';
   if (/magia|feitico|feitiço|fogo|gelo|raio|mana|encant/.test(value)) return 'MAGIC';
   if (/atac|golpe|soco|chute|corto|cortar|espada|flecha|tiro/.test(value)) return 'ATTACK';
-  if (/corro|movo|vou ate|vou até|avanço|avanco|recuo|entro|saio/.test(value)) return 'MOVE';
+  if (/viaj|corro|movo|vou ate|vou até|vou para|sigo|avanço|avanco|recuo|entro|saio/.test(value)) return 'MOVE';
   if (/observo|investigo|procuro|examino|percebo|localizo|localizar|rastreio/.test(value)) return 'OBSERVE';
   return 'CREATIVE';
 }
 
-function actionTarget(action, actors, worldEntities) {
+function actionTarget(action, actors, worldEntities, actorLocation='') {
   const text = fold(action.text);
   const mentioned = (name) => {
     const normalized = fold(name);
     if (text.includes(normalized)) return true;
     return normalized.split(/\s+/).filter((word) => word.length >= 4).some((word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text));
   };
-  const character = actors.find((candidate) => candidate.id !== action.characterId && candidate.status==='ALIVE' && mentioned(candidate.identity.name));
+  const character = actors.find((candidate) => candidate.id !== action.characterId && candidate.status==='ALIVE' && (!actorLocation||(candidate.location||candidate.position)===actorLocation) && mentioned(candidate.identity.name));
   if (character) return { kind: 'character', value: character };
   const entity = (worldEntities || []).find((candidate) => mentioned(candidate.name));
   return entity ? { kind: 'entity', value: entity } : null;
+}
+
+export function relationshipState(value) {
+  if(value&&typeof value==='object')return {
+    affection:clamp(Number(value.affection||0),0,100),trust:clamp(Number(value.trust||0),0,100),suspicion:clamp(Number(value.suspicion||0),0,100),
+    lastInteractionTurn:Number(value.lastInteractionTurn||0),history:Array.isArray(value.history)?value.history.slice(-20):[],
+  };
+  const legacy=clamp(Number(value||0),-100,100);
+  return {affection:Math.max(0,legacy),trust:Math.max(0,legacy),suspicion:Math.max(0,-legacy),lastInteractionTurn:0,history:[]};
+}
+
+function relationshipDelta(text, degree) {
+  const value=fold(text);const gift=/presente|entrego|ofereco|dou/.test(value);const help=/ajudo|protejo|salvo|cuido|defendo/.test(value);const promise=/prometo|juramento/.test(value);const fulfilled=/cumpro|cumpri|devolvo|retorno com/.test(value);const warm=/agrade|escuto|respeito|gentil/.test(value);const threatening=/ameac|intimid|chantage/.test(value);const betrayal=/traio|abandono|roubo|ataco|minto|engano/.test(value);
+  const meaningful=gift||help||promise||fulfilled||threatening||betrayal;const positive=degree==='critical_success'?2:degree==='success'?1:0;const negative=degree==='failure'?3:degree==='partial'?1:0;
+  const affection=(meaningful?positive:0)+(gift||help?1:0)+(warm&&degree==='critical_success'?1:0)-(threatening?2:0)-(betrayal?3:0);
+  const trust=(fulfilled?3:0)+(help?1:0)+(promise&&degree!=='failure'?0:0)+(meaningful?positive:0)-(threatening?2:0)-(betrayal?4:0)-negative;
+  const suspicion=(betrayal?4:0)+(threatening?3:0)+negative-(fulfilled?2:0)-(help&&degree!=='failure'?1:0);
+  const reason=betrayal?'traição ou engano':threatening?'ameaça':fulfilled?'promessa cumprida':promise?'promessa feita':help?'ajuda ou proteção':gift?'presente':warm?'conversa respeitosa':'resultado da interação';
+  return {affection,trust,suspicion,reason};
+}
+
+function localEnvironment(world,location){
+ const atlas=ensureAtlas(world);const node=atlas.nodes.find(item=>item.name===location);world.localStates ||= {};const state=world.localStates[location]||={location,biome:node?.biome||world.ecosystem?.biome||'Desconhecido',dangerLevel:Number(node?.dangerLevel??world.ecosystem?.dangerLevel??2),resources:location===world.location?world.ecosystem.resources:[]};
+ state.resources=Array.isArray(state.resources)?state.resources:[];return state;
 }
 
 function namedTarget(text, candidates) {
@@ -283,12 +312,13 @@ function resolveEnemyInitiative(world, actors, events, turnNumber, random, setti
   const damagedEnemies = new Set(events.filter((entry) => entry.type === 'DAMAGE' && living.some((character) => character.id === entry.sourceId)).map((entry) => entry.targetId));
   const danger = Number(world.ecosystem?.dangerLevel || 2);
   const frequencyBonus = settings.worldEventFrequency === 'high' ? .08 : settings.worldEventFrequency === 'chaotic' ? .14 : settings.worldEventFrequency === 'low' ? -.07 : 0;
-  for (const enemy of (world.entities || []).filter((entry) => entry.status !== 'DEAD' && entry.hp > 0 && (!entry.location || entry.location === world.location))) {
+  for (const enemy of (world.entities || []).filter((entry) => entry.status !== 'DEAD' && entry.hp > 0)) {
     if (damagedEnemies.has(enemy.id)) continue; // ataques sofridos já usam a retaliação existente
     if (Number(enemy.spawnTurn || 0) >= turnNumber) continue; // encontro novo dá um turno para o grupo reagir
     const aggression = clamp(.22 + danger * .045 + (settings.difficulty === 'hard' ? .10 : 0) + frequencyBonus, .10, .62);
     if (random() > aggression) continue;
-    const victim = living[Math.min(living.length - 1, Math.floor(random() * living.length))];
+    const localLiving=living.filter(character=>!enemy.location||(character.location||character.position)===enemy.location);if(!localLiving.length)continue;
+    const victim = localLiving[Math.min(localLiving.length - 1, Math.floor(random() * localLiving.length))];
     const enemySpeed = Number(enemy.attributes?.speed || 8);
     const victimStats = effectiveAttributes(victim);
     const hitChance = clamp(.64 + (enemySpeed - victimStats.speed) / 110, .28, .90);
@@ -304,9 +334,9 @@ function resolveEnemyInitiative(world, actors, events, turnNumber, random, setti
   }
 }
 
-export function resolveMechanics({ campaign, characters, actions, turnNumber, random = () => crypto.randomInt(0, 16777216) / 16777216 }) {
+export function resolveMechanics({ campaign, characters, actions, turnNumber, privatePhase = false, random = () => crypto.randomInt(0, 16777216) / 16777216 }) {
   const actors = structuredClone(characters);
-  for (const c of actors) { ensureProgression(c); c.cooldowns = Object.fromEntries(Object.entries(c.cooldowns).map(([k,v]) => [k,Math.max(0,v-1)])); }
+  for (const c of actors) { ensureProgression(c);if(!c.location||c.position==='Ponto inicial'){c.location=campaign.world.location;c.position=campaign.world.location;}c.knownNpcIds=Array.isArray(c.knownNpcIds)?c.knownNpcIds:[];if(!privatePhase)c.cooldowns = Object.fromEntries(Object.entries(c.cooldowns).map(([k,v]) => [k,Math.max(0,v-1)])); }
   const world = structuredClone(campaign.world);
   world.entities ||= [];
   world.npcs ||= [];
@@ -341,7 +371,9 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
       if(type !== 'ABSURD')type=abilityEffect?.type==='OBSERVE'?'OBSERVE':abilityEffect?.type==='HEAL'?'HEAL':abilityEffect?.type==='DEFEND'?'DEFEND':power.resource==='mana'?'MAGIC':'ATTACK';
     }
     if(world.introduction && !world.introduction.completed && ['ATTACK','MAGIC','HEAL','GATHER','ITEM'].includes(type))blocked='No limiar, converse com a entidade ou aceite a travessia.';
-    const target = actionTarget(action, actors, world.entities.filter(e=>!e.location||e.location===world.location));
+    const actorLocation=actor.location||actor.position||world.location;
+    const local=localEnvironment(world,actorLocation);
+    const target = actionTarget(action, actors, world.entities.filter(e=>!e.location||e.location===actorLocation),actorLocation);
     let success = true;
     let summary = `${actor.identity.name} executou sua intenção.`;
     const details = { type };
@@ -388,8 +420,8 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
         summary = `${actor.identity.name} usou ${item.name} e recuperou ${actor.resources[resource] - before} ${label}.`;
       }
     } else if (type === 'GATHER') {
-      const resource = namedTarget(action.text, world.ecosystem.resources.filter((entry) => entry.quantity > 0))
-        || world.ecosystem.resources.find((entry) => entry.quantity > 0);
+      const localResources=local.resources.filter((entry)=>entry.quantity>0);
+      const resource = namedTarget(action.text, localResources) || localResources[0];
       if (!resource) {
         success = false;
         summary = `${actor.identity.name} procurou recursos, mas a área precisa se regenerar antes de oferecer algo útil.`;
@@ -406,7 +438,7 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
         details.item = item.name;
       }
     } else if (type === 'REST') {
-      const safe = world.ecosystem.dangerLevel <= 2;
+      const safe = local.dangerLevel <= 2;
       const staminaBefore = actor.resources.stamina;
       const manaBefore = actor.resources.mana;
       const staminaGain = safe ? 14 : 6;
@@ -424,19 +456,19 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
         ? recovered ? `${actor.identity.name} descansou em segurança e recuperou ${recovered}.` : `${actor.identity.name} descansou em segurança, mas já estava com os recursos restaurados.`
         : recovered ? `${actor.identity.name} descansou com cautela em uma área perigosa e recuperou apenas ${recovered}.` : `${actor.identity.name} descansou com cautela, mas já estava com os recursos restaurados.`;
     } else if (type === 'INTERACT') {
-      const npc = namedTarget(action.text, world.npcs.filter(n=>!n.location||n.location===world.location));
+      const npc = namedTarget(action.text, world.npcs.filter(n=>!n.location||n.location===actorLocation));
       if (!npc) {
         success=false;
         summary = `${actor.identity.name} buscou diálogo, mas ninguém conhecido respondeu de imediato.`;
       } else {
-        const check=resolveActionCheck(actor,{text:action.text,attribute:'charisma',danger:Number(world.ecosystem?.dangerLevel||1),difficulty:campaign.settings.difficulty},random);
+        const check=resolveActionCheck(actor,{text:action.text,attribute:'charisma',danger:Number(local.dangerLevel||1),difficulty:campaign.settings.difficulty},random);
         details.check=check; events.push(event(turnNumber,'ACTION_CHECKED',actor.id,npc.id,check));
-        npc.relationships ||= {};
-        const before = clamp(Number(npc.relationships[actor.id] || 0), -100, 100);
-        const delta=check.degree==='critical_success'?3:check.degree==='success'?2:check.degree==='partial'?1:-2;
-        npc.relationships[actor.id] = clamp(before + delta, -100, 100);
+        npc.relationships ||= {};actor.knownNpcIds ||= [];if(!actor.knownNpcIds.includes(npc.id))actor.knownNpcIds.push(npc.id);
+        const before = relationshipState(npc.relationships[actor.id]);
+        const delta=relationshipDelta(action.text,check.degree);const after={...before,affection:clamp(before.affection+delta.affection,0,100),trust:clamp(before.trust+delta.trust,0,100),suspicion:clamp(before.suspicion+delta.suspicion,0,100),lastInteractionTurn:turnNumber};
+        after.history=[...before.history,{turn:turnNumber,degree:check.degree,reason:delta.reason,delta:{affection:delta.affection,trust:delta.trust,suspicion:delta.suspicion}}].slice(-20);npc.relationships[actor.id]=after;
         success=check.success;
-        events.push(event(turnNumber, 'NPC_RELATION_CHANGED', actor.id, npc.id, { npc: npc.name, before, after: npc.relationships[actor.id], degree:check.degree, description:`A relação de ${npc.name} com ${actor.identity.name} mudou de ${before} para ${npc.relationships[actor.id]}.` }));
+        events.push(event(turnNumber, 'NPC_RELATION_CHANGED', actor.id, npc.id, { npc: npc.name, before, after, delta, degree:check.degree, description:`A relação pessoal de ${npc.name} com ${actor.identity.name} mudou: afeto ${after.affection}, confiança ${after.trust}, desconfiança ${after.suspicion}.` }));
         if(check.degree==='failure')events.push(event(turnNumber,'COMPLICATION',actor.id,npc.id,{description:`A abordagem de ${actor.identity.name} criou atrito com ${npc.name}.`}));
         summary = check.degree==='partial' ? `${actor.identity.name} conseguiu avançar a conversa com ${npc.name}, mas com reservas.` : check.success ? `${actor.identity.name} teve uma abordagem ${check.degree==='critical_success'?'excepcionalmente ':''}eficaz com ${npc.name}.` : `${npc.name} reagiu mal à abordagem de ${actor.identity.name}.`;
       }
@@ -476,18 +508,19 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
         }
       }
     } else if (type === 'MOVE') {
-      const destination = cleanText(action.text.replace(/^.*?(?:até|para|entro em|vou a)\s+/i, ''), 80);
-      summary = `${actor.identity.name} propõe deslocamento. Viagens exigem destino conectado e concordância do grupo.`;
+      const intent=resolveTravelIntent(world,actor,action.text);
+      if(!intent){success=false;summary=`${actor.identity.name} não encontrou uma rota canônica compatível com a direção ou referência informada.`;details.travel={from:actorLocation,to:'',allowed:false,reason:summary,routeId:null};events.push(event(turnNumber,'TRAVEL_BLOCKED',actor.id,null,{...details.travel,description:summary}));}
+      else {summary=`${actor.identity.name} começou a avançar pela ${intent.route.terrain}, rumo a ${intent.destination?.name||intent.toId}.`;details.travel={from:intent.fromId,to:intent.toId,allowed:true,routeId:intent.route.id,direction:intent.direction||intent.route.direction,distance:intent.route.distance,terrain:intent.route.terrain,travelTime:intent.route.travelTime};}
     } else if (type === 'OBSERVE') {
       if(power)for(const[k,v]of Object.entries(power.cost))actor.resources[k]-=v;
-      const check=resolveActionCheck(actor,{text:action.text,attribute:'perception',danger:Number(world.ecosystem?.dangerLevel||1),difficulty:campaign.settings.difficulty,bonus:abilityEffect?.base||0},random);
+      const check=resolveActionCheck(actor,{text:action.text,attribute:'perception',danger:Number(local.dangerLevel||1),difficulty:campaign.settings.difficulty,bonus:abilityEffect?.base||0},random);
       details.check=check; success=check.success; events.push(event(turnNumber,'ACTION_CHECKED',actor.id,actor.id,check));
       const discovery=check.degree==='critical_success'?'Percebeu uma pista importante e um detalhe adicional.':check.degree==='success'?'Percebeu um detalhe útil no ambiente.':check.degree==='partial'?'Percebeu uma pista incompleta, suficiente para orientar a próxima decisão.':'Examinou o ambiente, mas não conseguiu separar pistas confiáveis do ruído.';
-      if(check.success)events.push(event(turnNumber, 'DISCOVERY', actor.id, actor.id, { degree:check.degree, discovery, description:discovery }));
+      if(check.success)events.push(event(turnNumber, 'DISCOVERY', actor.id, actor.id, { degree:check.degree, discovery, location:actorLocation, privateCharacterId:actor.id, description:discovery }));
       else events.push(event(turnNumber,'COMPLICATION',actor.id,actor.id,{description:'A investigação não revelou informação confiável e consumiu tempo.'}));
       summary = `${actor.identity.name}: ${discovery}`;
     } else {
-      const check=resolveActionCheck(actor,{text:action.text,attribute:'auto',danger:Number(world.ecosystem?.dangerLevel||2),difficulty:campaign.settings.difficulty},random);
+      const check=resolveActionCheck(actor,{text:action.text,attribute:'auto',danger:Number(local.dangerLevel||2),difficulty:campaign.settings.difficulty},random);
       details.check=check; success=check.success; events.push(event(turnNumber,'ACTION_CHECKED',actor.id,target?.value?.id,check));
       if(check.degree==='critical_success')summary=`${actor.identity.name} executou a tentativa com resultado excepcional.`;
       else if(check.degree==='success')summary=`${actor.identity.name} conseguiu realizar a intenção.`;
@@ -518,31 +551,29 @@ export function resolveMechanics({ campaign, characters, actions, turnNumber, ra
     character.updatedAt = nowIso();
   }
 
-  if(!world.introduction||world.introduction.completed){
-    for(const enemy of world.entities.filter(e=>e.status!=='DEAD'&&e.hp>0&&(!e.location||e.location===world.location))){
-      const aggressors=actors.filter(c=>c.status==='ALIVE'&&events.some(e=>e.type==='DAMAGE'&&e.sourceId===c.id&&e.targetId===enemy.id));
+  if(!privatePhase&&(!world.introduction||world.introduction.completed)){
+    for(const enemy of world.entities.filter(e=>e.status!=='DEAD'&&e.hp>0)){
+      const aggressors=actors.filter(c=>c.status==='ALIVE'&&(!enemy.location||(c.location||c.position)===enemy.location)&&events.some(e=>e.type==='DAMAGE'&&e.sourceId===c.id&&e.targetId===enemy.id));
       const victim=aggressors[0];if(!victim)continue;
       const damage=Math.max(1,Math.round((campaign.settings.difficulty==='hard'?11:8)+(enemy.attributes?.attack||0)-effectiveAttributes(victim).resistance*.25-(effectiveAttributes(victim).defense||0)));
       const hp=applyDamageToTarget(victim,damage);events.push(event(turnNumber,'DAMAGE',enemy.id,victim.id,{amount:damage,...hp,retaliation:true}));
     }
   }
-  resolveEnemyInitiative(world, actors, events, turnNumber, random, campaign.settings || {});
-  progressWorld(world,actors,actions,events,turnNumber,{random,settings:campaign.settings||{}});
+  if(!privatePhase)resolveEnemyInitiative(world, actors, events, turnNumber, random, campaign.settings || {});
+  progressWorld(world,actors,actions,events,turnNumber,{random,settings:privatePhase?null:(campaign.settings||{})});
   for(const c of actors){
-    const outcome=outcomes.find(o=>o.characterId===c.id);
-    const completedQuests=events.filter(e=>e.type==='QUEST_COMPLETED');
-    const questXp=completedQuests.reduce((n,e)=>n+Number(e.data?.rewardXp||0),0);
-    const questCoins=completedQuests.reduce((n,e)=>n+Number(e.data?.rewardCoins||0),0);
+    const outcome=outcomes.find(o=>o.characterId===c.id);const questXp=events.filter(e=>e.type==='QUEST_COMPLETED'&&(!e.sourceId||e.sourceId===c.id)).reduce((n,e)=>n+(e.data.rewardXp||0),0);
     const earned=(outcome?.success? (campaign.settings.progressionSpeed==='fast'?20:10):0)+questXp;
     if(questXp&&!c.powers.some(p=>p.id==='echo-sense')){c.powers.push(structuredClone(STORY_SKILLS[0]));events.push(event(turnNumber,'SKILL_UNLOCKED',c.id,c.id,{skillId:'echo-sense',name:'Sentido dos Ecos'}));}
-    if(questCoins>0){c.coins=Math.max(0,Number(c.coins??75))+questCoins;events.push(event(turnNumber,'COINS_GAINED',c.id,c.id,{amount:questCoins,source:'quest'}));}
     if(earned){const levels=grantXp(c,earned);events.push(event(turnNumber,'XP_GAINED',c.id,c.id,{amount:earned,levels}));}
-    c.downtimePoints=Math.min(3,Number(c.downtimePoints||0)+1);
+    if(!privatePhase)c.downtimePoints=Math.min(3,Number(c.downtimePoints||0)+1);
   }
-  if(!world.introduction||world.introduction.completed)advanceEcosystem(world, turnNumber, events);
-  updateBestiaryKnowledge(world, events, turnNumber);
+  if(!privatePhase&&(!world.introduction||world.introduction.completed))advanceEcosystem(world, turnNumber, events);
+  if(!privatePhase){updateBestiaryKnowledge(world, events, turnNumber);for(const actor of actors){actor.knownBestiaryKeys=Array.isArray(actor.knownBestiaryKeys)?actor.knownBestiaryKeys:[];for(const entity of world.entities.filter(item=>!item.location||(actor.location||actor.position)===item.location)){const key=fold(entity.name);if(!actor.knownBestiaryKeys.includes(key))actor.knownBestiaryKeys.push(key);}}}
 
-  return { characters: actors, world, outcomes, events, order: ordered.map((entry) => entry.action.id) };
+  const projection=buildSceneProjection(world,actors,events,turnNumber);
+  propagateSharedKnowledge(world,actors,projection);
+  return { characters: actors, world, outcomes, events:projection.canonicalEvents, projection, order: ordered.map((entry) => entry.action.id) };
 }
 
 export function sanitizeAiDirectives(raw) {

@@ -45,7 +45,7 @@ test('5.0 permite ausência voluntária sem expulsar jogador nem apagar personag
 });
 
 test('ações criativas e sociais usam teste autoritativo com sucesso parcial e falha possíveis', () => {
-  const c=createDefaultCharacter('u','c','Lina'); chooseClass(c,'bard');
+  const c=createDefaultCharacter('u','c','Lina'); chooseClass(c,'bard');c.location='Portão';c.position='Portão';
   const good=resolveActionCheck(c,{text:'Convenço a guarda a me ouvir',attribute:'charisma',danger:1},()=>0.01);
   const bad=resolveActionCheck(c,{text:'Convenço a guarda a me ouvir',attribute:'charisma',danger:5,difficulty:'hard'},()=>0.99);
   assert.equal(good.degree,'critical_success'); assert.equal(bad.degree,'failure');
@@ -53,7 +53,9 @@ test('ações criativas e sociais usam teste autoritativo com sucesso parcial e 
   const action={id:'a',characterId:c.id,text:'Converso com Eira e tento convencê-la a revelar tudo.',submittedAt:'2026-01-01'};
   const result=resolveMechanics({campaign,characters:[c],actions:[action],turnNumber:1,random:()=>0.99});
   assert.equal(result.outcomes[0].success,false);
-  assert.equal(result.world.npcs[0].relationships[c.id],-2);
+  assert.equal(result.world.npcs[0].relationships[c.id].affection,0);
+  assert.equal(result.world.npcs[0].relationships[c.id].trust,0);
+  assert.equal(result.world.npcs[0].relationships[c.id].suspicion,3);
   assert.ok(result.events.some(e=>e.type==='ACTION_CHECKED'));
   assert.ok(result.events.some(e=>e.type==='COMPLICATION'));
 });
