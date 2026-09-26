@@ -1,5 +1,5 @@
 const STATIC_CACHE='eidryss-static-v700';
-const STATIC=['/style.css?v=700','/app.js?v=700','/icon.svg','/manifest.json'];
+const STATIC=['/style.css?v=701','/app.js?v=701','/icon.svg','/manifest.json'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(STATIC_CACHE).then(cache=>cache.addAll(STATIC)).catch(()=>{}).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==STATIC_CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();if(event.data?.type==='CLEAR_EIDRYSS_CACHE')event.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k)))));});

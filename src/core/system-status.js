@@ -5,7 +5,7 @@ const DEFAULT_STATUS = Object.freeze({
   maintenance: false,
   message: 'O mundo está sendo atualizado. Aguarde alguns instantes.',
   changedAt: null,
-  clientRevision: 700,
+  clientRevision: 701,
 });
 
 export class SystemStatus {

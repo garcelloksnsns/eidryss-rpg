@@ -23,21 +23,26 @@ export function createConfig(overrides = {}) {
   loadEnv(path.join(rootDir, '.env'));
   const port = Number(overrides.port ?? process.env.PORT ?? 8000);
   const sessionDays = Number(process.env.SESSION_DAYS || 30);
-  const preferredDataFile = path.resolve(rootDir, overrides.dataFile ?? process.env.DATA_FILE ?? './data/eidryss.json');
-  const legacyDataFile = path.resolve(rootDir, './data/germinal.json');
-  const resolvedDataFile = overrides.dataFile || process.env.DATA_FILE || fs.existsSync(preferredDataFile) || !fs.existsSync(legacyDataFile) ? preferredDataFile : legacyDataFile;
+  const configuredDataDir = overrides.dataDir ?? process.env.EIDRYSS_DATA_DIR ?? '';
+  const dataDir = configuredDataDir ? path.resolve(configuredDataDir) : path.resolve(rootDir, 'data');
+  const explicitDataFile = overrides.dataFile ?? process.env.DATA_FILE ?? '';
+  const preferredDataFile = explicitDataFile ? path.resolve(explicitDataFile) : path.join(dataDir, 'eidryss.json');
+  const legacyDataFiles = [path.join(dataDir, 'germinal.json'), path.resolve(rootDir, './data/germinal.json')];
+  const legacyDataFile = legacyDataFiles.find((candidate) => fs.existsSync(candidate));
+  const resolvedDataFile = explicitDataFile || fs.existsSync(preferredDataFile) || !legacyDataFile ? preferredDataFile : legacyDataFile;
 
   return {
     rootDir,
     devTools: overrides.devTools ?? (process.env.EIDRYSS_DEV_TOOLS === '1' || process.env.GERMINAL_DEV_TOOLS === '1'),
     host: overrides.host ?? process.env.HOST ?? '0.0.0.0',
     port: Number.isInteger(port) && port >= 0 && port <= 65535 ? port : 8000,
+    dataDir,
     dataFile: resolvedDataFile,
-    vaultKeyFile: path.resolve(rootDir, overrides.vaultKeyFile ?? process.env.VAULT_KEY_FILE ?? './data/server.key'),
-    systemStatusFile: path.resolve(rootDir, overrides.systemStatusFile ?? process.env.SYSTEM_STATUS_FILE ?? './data/system-status.json'),
+    vaultKeyFile: path.resolve(overrides.vaultKeyFile ?? process.env.VAULT_KEY_FILE ?? path.join(dataDir, 'server.key')),
+    systemStatusFile: path.resolve(overrides.systemStatusFile ?? process.env.SYSTEM_STATUS_FILE ?? path.join(dataDir, 'system-status.json')),
     brandName: 'Eidryss',
-    appVersion: '7.0.0',
-    clientRevision: 700,
+    appVersion: '7.0.1',
+    clientRevision: 701,
     publicDir: path.resolve(rootDir, overrides.publicDir ?? './public'),
     sessionTtlMs: Math.max(1, sessionDays) * 86_400_000,
     geminiApiKey: process.env.GEMINI_API_KEY || '',

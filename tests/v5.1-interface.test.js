@@ -30,8 +30,8 @@ test('6.0 mostra sala multiplayer com mestragem distribuída',()=>{
 });
 
 test('7.0 invalida cache antigo da interface',()=>{
-  assert.match(html,/style\.css\?v=700/);
-  assert.match(html,/app\.js\?v=700/);
-  assert.match(app,/sw\.js\?v=700/);
+  assert.match(html,/style\.css\?v=701/);
+  assert.match(html,/app\.js\?v=701/);
+  assert.match(app,/sw\.js\?v=701/);
   assert.match(sw,/eidryss-static-v700/);
 });

@@ -132,7 +132,7 @@ async function checkClientMeta(retry=false) {
     const meta=await response.json();
     state.clientMeta=meta;
     const previous=Number(localStorage.getItem('eidryss_client_revision')||0);
-    const current=Number(meta.clientRevision||700);
+    const current=Number(meta.clientRevision||701);
     if(previous && current!==previous) await clearClientCaches();
     localStorage.setItem('eidryss_client_revision',String(current));
     if(meta.maintenance){renderMaintenance(meta.maintenanceMessage);return false;}
@@ -220,12 +220,30 @@ function renderAuth() {
   };
 }
 
-async function loadLobby() {
+function navigationUrl(view, tab='') {
+  const base = `${location.pathname}${location.search}`;
+  if (view === 'game') return `${base}#${encodeURIComponent(tab || 'story')}`;
+  return base.replace(/#.*$/, '');
+}
+
+function navigationState(view, tab='') {
+  return { eidryss: true, view, campaignId: view === 'game' ? state.campaignId : null, tab: tab || null };
+}
+
+function setNavigation(view, tab='', mode='replace') {
+  try {
+    const method = mode === 'push' ? 'pushState' : 'replaceState';
+    history[method](navigationState(view, tab), '', navigationUrl(view, tab));
+  } catch {}
+}
+
+async function loadLobby({ historyMode = 'replace' } = {}) {
   disconnectSocket();
   const result = await api('/api/campaigns');
   state.campaigns = result.campaigns;
   state.campaignId = null; state.game = null; state.profile = null;
   localStorage.removeItem('germinal_campaign');
+  if (historyMode !== 'none') setNavigation('lobby', '', historyMode);
   renderLobby();
 }
 
@@ -297,10 +315,11 @@ function renderCreateForm() {
   bindProviderFields(slot.querySelector('#create-form'));
 }
 
-async function openCampaign(id) {
+async function openCampaign(id, { historyMode = 'push' } = {}) {
   state.campaignId = id; state.tab = 'story'; state.history = null;
   localStorage.setItem('germinal_campaign', id);
   localStorage.setItem('germinal_last_campaign', id);
+  if (historyMode !== 'none') setNavigation('game', 'story', historyMode);
   await loadGame(); connectSocket();
 }
 
@@ -534,13 +553,15 @@ function renderGame() {
 
   applyVisualMode(game.campaign.settings.visualTheme);
   const tabContent = { story: () => storyTab(game), character: () => characterTab(game), progression:()=>progressionTab(game), classes:()=>classesTab(game), inventory: () => inventoryTab(game), history: () => historyTab(), skills:()=>skillsTab(game), worldhub:()=>worldHubTab(game), map:()=>mapTab(game), journal:()=>journalTab(game), group:()=>groupTab(game), dev:()=>devTab(game), settings: () => settingsTab(game) }[state.tab]?.() || storyTab(game);
-  app.innerHTML = `<div class="page-content" data-scene="${esc(`${state.campaignId}:${state.tab}:${game.turn?.id}`)}"><header class="header"><button class="button ghost small" id="back">←</button><div class="header-copy"><span class="eyebrow">${game.campaign.isDemo ? 'Tutorial' : esc(statusName(game.campaign.state))}</span><h1>${esc(game.campaign.settings.campaignIcon || '✦')} ${esc(game.campaign.name)}</h1><span class="connection"><i class="dot ${state.socketStatus==='online'?'online':''}"></i>${state.socketStatus==='online'?'tempo real':state.socketStatus==='connecting'?'conectando':'reconectando'} · salvo ${savedTime(game.campaign.lastSavedAt)}</span></div><div class="header-badges">${game.isMaster?'<span class="pill gold">Mestre</span>':game.isCoMaster?'<span class="pill">Co-mestre</span>':''}<span class="pill">T${game.turn?.number || '—'}</span></div></header>${state.tab !== 'story' ? resources(game.character) : ''}<div style="height:12px"></div>${tabContent}<button class="guide-bot" id="guide-bot" aria-label="Abrir tutorial">🤖<small>Ajuda</small></button><nav class="bottom-nav" aria-label="Navegação da aventura">${[['story','✦','Aventura'],['character','♙','Herói'],['progression','⬡','Evolução'],['skills','✺','Códice'],['inventory','◇','Arsenal'],['worldhub','⌘','Mundo'],['group','⌁','Grupo']].map(([tab,icon,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}"><span>${icon}</span>${label}</button>`).join('')}</nav>${guideMarkup()}</div>`;
+  app.innerHTML = `<div class="page-content" data-scene="${esc(`${state.campaignId}:${state.tab}:${game.turn?.id}`)}"><header class="header"><button class="button ghost small" id="back">←</button><div class="header-copy"><span class="eyebrow">${game.campaign.isDemo ? 'Tutorial' : esc(statusName(game.campaign.state))}</span><h1>${esc(game.campaign.settings.campaignIcon || '✦')} ${esc(game.campaign.name)}</h1><span class="connection"><i class="dot ${state.socketStatus==='online'?'online':''}"></i>${state.socketStatus==='online'?'tempo real':state.socketStatus==='connecting'?'conectando':'reconectando'} · salvo ${savedTime(game.campaign.lastSavedAt)}</span></div><div class="header-badges">${game.isMaster?'<span class="pill gold">Mestre</span>':game.isCoMaster?'<span class="pill">Co-mestre</span>':''}<span class="pill">T${game.turn?.number || '—'}</span></div></header>${state.tab !== 'story' ? resources(game.character) : ''}<div style="height:12px"></div>${tabContent}</div><button class="guide-bot" id="guide-bot" aria-label="Abrir tutorial">🤖<small>Ajuda</small></button><nav class="bottom-nav" aria-label="Navegação da aventura">${[['story','✦','Aventura'],['character','♙','Herói'],['progression','⬡','Evolução'],['skills','✺','Códice'],['inventory','◇','Arsenal'],['worldhub','⌘','Mundo'],['group','⌁','Grupo']].map(([tab,icon,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}"><span>${icon}</span>${label}</button>`).join('')}</nav>${guideMarkup()}`;
   bindGameEvents();
   for(const f of fields){const el=document.getElementById(f.form)?.elements.namedItem(f.name);if(el){el.value=f.value;el.checked=f.checked;if(focused&&focused.form===f.form&&focused.name===f.name){el.focus({preventScroll:true});if(typeof el.setSelectionRange==='function'&&focused.start!=null)el.setSelectionRange(focused.start,focused.end??focused.start);}}}
 }
 
-async function chooseTab(tab) {
+async function chooseTab(tab, { historyMode = 'push' } = {}) {
+  const changed = tab !== state.tab;
   state.tab = tab;
+  if (changed && historyMode !== 'none') setNavigation('game', tab, historyMode);
   if (tab === 'history' && !state.history) { renderGame(); const result = await api(`/api/campaigns/${state.campaignId}/history`); state.history = result.history; }
   renderGame();
 }
@@ -559,7 +580,10 @@ async function saveAndExit() {
 }
 
 function bindGameEvents() {
-  app.querySelector('#back').onclick = saveAndExit;
+  app.querySelector('#back').onclick = () => {
+    if (history.state?.eidryss && history.state.view === 'game' && history.length > 1) history.back();
+    else saveAndExit();
+  };
   app.querySelectorAll('[data-tab]').forEach((button) => button.onclick = () => { if(button.dataset.codexJump)state.codexSection=button.dataset.codexJump; chooseTab(button.dataset.tab); });
   app.querySelectorAll('[data-codex-section]').forEach((button)=>button.onclick=()=>{state.codexSection=button.dataset.codexSection;renderGame();});
   app.querySelectorAll('[data-class-style-filter]').forEach((button)=>button.onclick=()=>{state.classStyle=button.dataset.classStyleFilter;renderGame();});
@@ -694,12 +718,39 @@ async function boot() {
   if(!(await checkClientMeta(false))) return;
   try {
     state.user = (await api('/api/auth/me')).user;
-    if (state.campaignId) { try { await openCampaign(state.campaignId); return; } catch {} }
-    await loadLobby();
+    if (state.campaignId) {
+      try {
+        setNavigation('lobby', '', 'replace');
+        await openCampaign(state.campaignId, { historyMode: 'push' });
+        return;
+      } catch {}
+    }
+    await loadLobby({ historyMode: 'replace' });
   } catch { renderAuth(); }
 }
 
-if(typeof window.addEventListener==='function')window.addEventListener('beforeinstallprompt',(event)=>{event.preventDefault();state.installPrompt=event;if(state.game)renderGame();});
+if(typeof window.addEventListener==='function'){
+  window.addEventListener('beforeinstallprompt',(event)=>{event.preventDefault();state.installPrompt=event;if(state.game)renderGame();});
+  window.addEventListener('popstate', async (event) => {
+    const nav = event.state;
+    if (!nav?.eidryss) return;
+    if (nav.view === 'lobby') {
+      try { await loadLobby({ historyMode: 'none' }); } catch { renderAuth(); }
+      return;
+    }
+    if (nav.view === 'game' && nav.campaignId) {
+      try {
+        const campaignChanged = state.campaignId !== nav.campaignId || !state.game;
+        state.campaignId = nav.campaignId;
+        localStorage.setItem('germinal_campaign', nav.campaignId);
+        state.tab = nav.tab || 'story';
+        if (campaignChanged) { await loadGame(); connectSocket(); }
+        else if (state.tab === 'history' && !state.history) { const result = await api(`/api/campaigns/${state.campaignId}/history`); state.history = result.history; renderGame(); }
+        else renderGame();
+      } catch { await loadLobby({ historyMode: 'replace' }); }
+    }
+  });
+}
 boot();
 
-if('serviceWorker' in navigator && window.isSecureContext)navigator.serviceWorker.register('/sw.js?v=700').catch(()=>{});
+if('serviceWorker' in navigator && window.isSecureContext)navigator.serviceWorker.register('/sw.js?v=701').catch(()=>{});

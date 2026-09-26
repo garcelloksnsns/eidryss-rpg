@@ -1,6 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 cd "$(dirname "$0")"
+EIDRYSS_PROJECT_DIR="$PWD"
+. "./scripts/termux-persistence.sh"
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js não encontrado. Instale com: pkg install nodejs-lts -y"
   exit 1

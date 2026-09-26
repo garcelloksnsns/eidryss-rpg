@@ -13,8 +13,8 @@ test('7.0 expõe metadados de cliente e bloqueia APIs durante manutenção', asy
   const meta = await browser.request('/api/client/meta');
   assert.equal(meta.status, 200);
   assert.equal(meta.data.name, 'Eidryss');
-  assert.equal(meta.data.version, '7.0.0');
-  assert.equal(meta.data.clientRevision, 700);
+  assert.equal(meta.data.version, '7.0.1');
+  assert.equal(meta.data.clientRevision, 701);
   assert.equal(meta.data.maintenance, false);
 
   await app.systemStatus.write({ maintenance: true, message: 'Aplicando a Reforja 7.0.' });

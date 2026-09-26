@@ -1,4 +1,4 @@
-# Eidryss 7.0 — Ascensão
+# Eidryss 7.0.1 — Ascensão
 
 Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em Node.js, Mestre IA, mundo persistente e cliente Android. O celular do Host continua sendo o servidor pelo Termux; o APK funciona como cliente e recebe a interface atualizada do próprio servidor.
 
@@ -15,6 +15,15 @@ Eidryss é um RPG sandbox multiplayer mobile-first com servidor autoritativo em 
 - modo de manutenção e revisão de cliente para atualizar a interface sem reinstalar APK;
 - cliente Android nativo para splash/conexão/manutenção/cache + WebView segura para a interface viva;
 - GitHub Actions pronto para compilar um APK sem computador.
+
+
+## Persistência entre versões
+
+No Termux, `INICIAR-TERMUX.sh` e `INICIAR-ONLINE-TERMUX.sh` usam `~/.eidryss/` para o banco e o cofre. Assim contas, campanhas, turnos e chaves não dependem da pasta do código. Para tentar recuperar uma instalação antiga, execute:
+
+```bash
+bash RECUPERAR-DADOS-ANTIGOS-TERMUX.sh
+```
 
 ## Rodar no Termux
 
